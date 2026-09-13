@@ -5,3 +5,5 @@
 {"ts":"2026-09-13T16:26:30.382Z","e":"add","id":"m005","type":"preference","deps":[]}
 {"ts":"2026-09-13T16:26:30.616Z","e":"check","pass":1,"fail":0}
 {"ts":"2026-09-13T16:26:30.668Z","e":"inject","ids":["m002","m001","m003","m005","m004"],"budget":600,"tokens":235}
+{"ts":"2026-09-13T16:54:48.764Z","e":"add","id":"m006","type":"pitfall","deps":[]}
+{"ts":"2026-09-13T16:54:48.852Z","e":"add","id":"m007","type":"progress","deps":["README.md"]}

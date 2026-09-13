@@ -1,5 +1,5 @@
 {
- "seq": 5,
+ "seq": 7,
  "entries": [
   {
    "id": "m001",
@@ -124,6 +124,54 @@
     "queryHits": 0,
     "injections": 1,
     "lastInjectedAt": "2026-09-13T16:26:30.668Z"
+   }
+  },
+  {
+   "id": "m006",
+   "type": "pitfall",
+   "text": "git push 到 github.com 上传流会卡死（GET 通 POST 卡），备用通道：node /d/Zcode work/.tools/push-via-api.js 走 api.github.com 的 Git Data API；注意 GitHub 会把提交时间归一为 UTC(+0000)",
+   "tags": [
+    "windows"
+   ],
+   "deps": [],
+   "evidence": {
+    "commit": "2df89f0583b59d30e6475d45982c83a8d841b6ba",
+    "files": []
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:54:48.763Z",
+   "verifiedAt": "2026-09-13T16:54:48.764Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m007",
+   "type": "progress",
+   "text": "仓库已开源：github.com/liv114514/projectmem，含 9 个 topics；README/调研文档/测试/自食用记忆全部上线",
+   "tags": [],
+   "deps": [
+    "README.md"
+   ],
+   "evidence": {
+    "commit": "2df89f0583b59d30e6475d45982c83a8d841b6ba",
+    "files": [
+     "README.md"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:54:48.851Z",
+   "verifiedAt": "2026-09-13T16:54:48.851Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
    }
   }
  ]
