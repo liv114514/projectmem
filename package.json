@@ -1,0 +1,12 @@
+{
+  "name": "projectmem",
+  "version": "1.0.0",
+  "description": "零依赖的项目记忆编译器：记忆会失效、带证据、能断言、算得清收益。Zero-dependency project memory compiler for AI coding agents.",
+  "main": "pmem.js",
+  "bin": { "pmem": "pmem.js" },
+  "scripts": { "test": "node --test test/pmem.test.mjs" },
+  "engines": { "node": ">=20" },
+  "keywords": ["ai-agents", "memory", "mcp", "claude-code", "knowledge-base", "zero-dependency", "developer-tools", "中文"],
+  "author": "liv114514",
+  "license": "MIT"
+}
