@@ -1,0 +1,130 @@
+{
+ "seq": 5,
+ "entries": [
+  {
+   "id": "m001",
+   "type": "decision",
+   "text": "零依赖纯 JSONL：单项目≤2000条规模下，刻意不用 SQLite/向量库，换零编译零黑盒",
+   "tags": [
+    "架构"
+   ],
+   "deps": [
+    "package.json"
+   ],
+   "evidence": {
+    "commit": "f3dfafe301b9440648d19d700319a4eca8c06ac1",
+    "files": [
+     "package.json"
+    ]
+   },
+   "assert": {
+    "kind": "no-deps"
+   },
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:26:30.073Z",
+   "verifiedAt": "2026-09-13T16:26:30.074Z",
+   "stats": {
+    "queryHits": 1,
+    "injections": 1,
+    "lastInjectedAt": "2026-09-13T16:26:30.668Z"
+   }
+  },
+  {
+   "id": "m002",
+   "type": "decision",
+   "text": "范式=记忆编译器：git 依赖驱动失效+证据链+断言+ROI账本，五机制查新记录在 docs/feasibility-zh.md 附录B",
+   "tags": [
+    "架构"
+   ],
+   "deps": [
+    "docs/feasibility-zh.md"
+   ],
+   "evidence": {
+    "commit": "f3dfafe301b9440648d19d700319a4eca8c06ac1",
+    "files": [
+     "docs/feasibility-zh.md"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:26:30.155Z",
+   "verifiedAt": "2026-09-13T16:26:30.155Z",
+   "stats": {
+    "queryHits": 1,
+    "injections": 1,
+    "lastInjectedAt": "2026-09-13T16:26:30.667Z"
+   }
+  },
+  {
+   "id": "m003",
+   "type": "pitfall",
+   "text": "本机 Windows：GitHub 惯例走代理 127.0.0.1:7890（须手动开启），但 2026-09-14 实测直连 github.com/api 均通；nodejs.org 直连可通",
+   "tags": [
+    "windows"
+   ],
+   "deps": [],
+   "evidence": {
+    "commit": "f3dfafe301b9440648d19d700319a4eca8c06ac1",
+    "files": []
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:26:30.230Z",
+   "verifiedAt": "2026-09-13T16:26:30.231Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 1,
+    "lastInjectedAt": "2026-09-13T16:26:30.668Z"
+   }
+  },
+  {
+   "id": "m004",
+   "type": "progress",
+   "text": "v1.0.0：P0+P1 全量完成，10 个测试全绿（含 MCP stdio 往返与 git 时间戳确定性用例）",
+   "tags": [],
+   "deps": [
+    "pmem.js"
+   ],
+   "evidence": {
+    "commit": "f3dfafe301b9440648d19d700319a4eca8c06ac1",
+    "files": [
+     "pmem.js"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:26:30.302Z",
+   "verifiedAt": "2026-09-13T16:26:30.303Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 1,
+    "lastInjectedAt": "2026-09-13T16:26:30.668Z"
+   }
+  },
+  {
+   "id": "m005",
+   "type": "preference",
+   "text": "交付纪律：先给点一下就能用的形态，原理放后面；对外动作拿不准先问一句",
+   "tags": [],
+   "deps": [],
+   "evidence": {
+    "commit": "f3dfafe301b9440648d19d700319a4eca8c06ac1",
+    "files": []
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T16:26:30.381Z",
+   "verifiedAt": "2026-09-13T16:26:30.381Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 1,
+    "lastInjectedAt": "2026-09-13T16:26:30.668Z"
+   }
+  }
+ ]
+}
