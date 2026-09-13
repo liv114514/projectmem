@@ -1,0 +1,123 @@
+# projectmem（pmem）
+
+> 零依赖的**项目记忆编译器**——让 AI 编程 agent 跨会话记住你的项目：做过什么、定了什么、踩过什么坑，代码一变记忆自动变旧。
+>
+> **Zero-dependency project memory compiler for AI coding agents.** Memory that expires by git, carries receipts, runs assertions, and shows its own ROI.
+
+`一个 js 文件 · 0 依赖 · Node ≥ 20 · Windows/macOS/Linux · 中文友好`
+
+---
+
+## 为什么
+
+每个 AI 编程 agent 都有同一个病：**新会话失忆**。你要重新粘贴项目背景；agent 自带的 CLAUDE.md / MEMORY.md 像便利贴——只增不减、搜不了、过期了也不知道。
+
+现有方案（[agentmemory](https://github.com/rohitg00/agentmemory)、[claude-mem](https://github.com/thedotmack/claude-mem) 等）验证了需求，但它们依赖重（固定版本二进制引擎 / Bun+uv+Chroma）、原生 Windows 是二等公民、数据进 SQLite 黑盒。
+
+## 核心理念：记忆是编译产物，不是笔记仓库
+
+| | 笔记仓库（现有方案） | 记忆编译器（projectmem） |
+|---|---|---|
+| 记忆从哪来 | LLM 压缩会话 / 手写 | **从项目源确定性编译**：git + 会话 + 文档，LLM 只是可选润色 |
+| 何时过期 | 按时间衰减（猜） | **git 依赖驱动（算）**：登记的文件一变，记忆精确标旧 |
+| 可信度 | 无出处 | **每条带证据收据**：commit hash / 文件路径 |
+| 对错自证 | 不能 | **断言式记忆**：决策挂上可执行的检查，像测试一样会"挂" |
+| 效果度量 | 拍脑袋 | **命中率遥测 + ROI 账本**：省了多少 token，账上见 |
+
+五个机制在 GitHub 上逐条查新（2026-09，详见 [docs/feasibility-zh.md](docs/feasibility-zh.md) 附录 B）：依赖驱动失效仅 1 个 0★ 实验仓库撞过方向，其余为 0 结果。
+
+## 快速开始
+
+```bash
+# 不装任何东西，有 Node 就能跑（也可 npm i -g 得到 pmem 命令）
+node pmem.js init
+node pmem.js add decision "本项目零依赖，不许引入 npm 运行时依赖" --assert no-deps --file package.json
+node pmem.js query 零依赖
+```
+
+第一条记忆带上了完整范式：**证据**（自动记录 commit + 依赖文件）、**失效源**（package.json 一变它就变旧）、**断言**（谁真装了依赖，`pmem check` 当场红牌）。
+
+## 命令总览
+
+| 命令 | 作用 |
+|---|---|
+| `pmem add <类型> <正文> [--file 路径] [--tag 标签] [--assert 检查]` | 写入记忆（decision/progress/pitfall/preference/fact/note） |
+| `pmem note <正文>` | 快捷便签 |
+| `pmem query <关键词...>` | 中文友好相关度检索（CJK bigram + BM25-lite） |
+| `pmem stale` | 失效扫描：登记文件删除/变更 → 记忆标旧，改动撤销自动复活 |
+| `pmem fresh <id>` | 人工复核后刷新失效基线 |
+| `pmem check` | 跑所有断言；有失败退出码 1，可直接挂 CI |
+| `pmem inject [--budget 1500]` | 按 token 预算装箱高价值记忆（给 hooks 用） |
+| `pmem roi` | ROI 账本：每条记忆省/耗/净收益（粗估） |
+| `pmem list / show / archive / render / log` | 日常管理 |
+| `pmem mcp` | 启动 MCP stdio server |
+
+## 接进你的 agent
+
+**MCP**（Claude Code / ZCode / Cursor 等通用，server 以启动时的工作目录为项目根）：
+
+```bash
+# Claude Code
+claude mcp add projectmem -- node /path/to/pmem.js mcp
+```
+
+```jsonc
+// 其他客户端的 mcpServers 配置
+{ "projectmem": { "command": "node", "args": ["/path/to/pmem.js", "mcp"] } }
+```
+
+工具集：`pmem_add`（带证据写入）、`pmem_query`（检索）、`pmem_inject`（预算注入）、`pmem_stale`（失效扫描）、`pmem_check`（断言）、`pmem_show`、`pmem_roi`。
+
+**会话启动注入**（以 Claude Code hooks 为例，加进 settings.json）：
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node /path/to/pmem.js inject --budget 1500" }] }]
+  }
+}
+```
+
+**CI 卡口**：`pmem check` 退出码非 0 即失败——决策被违反或记忆过期，构建直接红。
+
+## 存储布局（全部可提交进 git）
+
+```
+.pmem/
+├── events.jsonl   事件日志（append-only 审计流：add/fresh/archive/stale/inject/check）
+├── index.json     机器态（原子写）
+└── MEMORY.md      人读投影（自动重绘，勿手改）
+```
+
+- 记忆数据在你手里：纯文本、可 diff、可备份、可跨机器同步。
+- 设计取舍：**刻意不用 SQLite / 向量库**。目标规模是单项目 ≤ 2000 条，纯 JSON + BM25-lite 完全够，换来零依赖、零编译、零黑盒。超了再升级（见路线图）。
+
+## 与现成项目对比
+
+| 维度 | agentmemory (28.4k★) | claude-mem (46k+★) | projectmem |
+|---|---|---|---|
+| 依赖 | 固定版本 iii 引擎二进制 | Bun + uv + Chroma | **0** |
+| 原生 Windows | 需手动装引擎，推荐 WSL2 | 安装链长 | **一等公民** |
+| 记忆过期 | 时间衰减 | — | **git 依赖驱动 + 断言验证** |
+| 记忆出处 | 无 | 无 | **commit/文件收据** |
+| 效果度量 | 无 | 无 | **命中率 + ROI 账本** |
+| 抓取成本 | LLM 压缩 | LLM 压缩 | **0 token（规则抽取）** |
+
+## 路线图
+
+- ✅ **P0**：单文件 CLI + JSONL 事件日志 + 证据链 + 中文检索
+- ✅ **P1**：git 依赖失效扫描 + 断言 + 预算注入 + MCP stdio server
+- 🔶 **P2**（部分完成）：命中率遥测与 ROI 账本已上线；会话转录自动抓取（hooks 深度集成）进行中
+- ⬜ **P3**：本地向量检索（openvino/MiniLM）、LLM 记忆润色（可选层）、4 层记忆分层
+
+## 开发
+
+```bash
+npm test        # node --test test/（含 MCP stdio 往返测试）
+```
+
+调研、查新与可行性论证全文：[docs/feasibility-zh.md](docs/feasibility-zh.md)。
+
+## License
+
+MIT
