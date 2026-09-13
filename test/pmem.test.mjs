@@ -57,6 +57,14 @@ test('query：英文单词命中', () => {
   assert.ok(r.stdout.includes('m001'));
 });
 
+test('query：--limit 的参数不会被当成关键词（回归）', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  run(['add', 'pitfall', '代理 127.0.0.1:7890'], tmp);
+  const r = run(['query', '代理', '--limit', '3'], tmp);
+  assert.ok(r.stdout.includes('m001'), '--limit 3 不应污染关键词');
+});
+
 test('check：断言通过与失败（失败退出码 1）', () => {
   const tmp = mktmp();
   writeFileSync(path.join(tmp, 'package.json'), '{"name":"x","dependencies":{"left-pad":"1.0.0"}}');

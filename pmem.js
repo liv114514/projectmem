@@ -314,11 +314,14 @@ function cmdShow([id]) {
 
 function cmdQuery(argv) {
   ensureStorage();
-  const kw = argv.filter((a) => !a.startsWith('--')).join(' ').trim();
-  if (!kw) die('用法：pmem query <关键词>（可多个，空格分隔）');
   let limit = 8;
-  const li = argv.indexOf('--limit');
-  if (li >= 0) limit = parseInt(argv[li + 1], 10) || 8;
+  const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--limit') limit = parseInt(argv[++i], 10) || 8;
+    else if (!argv[i].startsWith('--')) rest.push(argv[i]);
+  }
+  const kw = rest.join(' ').trim();
+  if (!kw) die('用法：pmem query <关键词>（可多个，空格分隔；--limit n 调条数）');
   const idx = readIndex();
   const hits = scoreEntries(idx, tokenize(kw), limit);
   if (!hits.length) return console.log(`没有命中 "${kw}"。试更短的关键词，或 pmem list 全量看。`);
