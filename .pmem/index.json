@@ -1,5 +1,5 @@
 {
- "seq": 7,
+ "seq": 8,
  "entries": [
   {
    "id": "m001",
@@ -50,7 +50,7 @@
    "status": "active",
    "staleReasons": [],
    "createdAt": "2026-09-13T16:26:30.155Z",
-   "verifiedAt": "2026-09-13T16:26:30.155Z",
+   "verifiedAt": "2026-09-13T23:56:25.331Z",
    "stats": {
     "queryHits": 1,
     "injections": 1,
@@ -95,8 +95,10 @@
     ]
    },
    "assert": null,
-   "status": "active",
-   "staleReasons": [],
+   "status": "archived",
+   "staleReasons": [
+    "pmem.js 在核实后变更过（1ec9f3d 时点检测）"
+   ],
    "createdAt": "2026-09-13T16:26:30.302Z",
    "verifiedAt": "2026-09-13T16:26:30.303Z",
    "stats": {
@@ -168,6 +170,33 @@
    "staleReasons": [],
    "createdAt": "2026-09-13T16:54:48.851Z",
    "verifiedAt": "2026-09-13T16:54:48.851Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m008",
+   "type": "progress",
+   "text": "v1.0.0+：P0+P1 全量 + P2 部分（遥测/ROI 账本），11 测试全绿，已开源 github.com/liv114514/projectmem（9 topics）",
+   "tags": [
+    "milestone"
+   ],
+   "deps": [
+    "pmem.js"
+   ],
+   "evidence": {
+    "commit": "1ec9f3d896b5aba617754b9dc837b81c9b4915a5",
+    "files": [
+     "pmem.js"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-13T23:56:25.475Z",
+   "verifiedAt": "2026-09-13T23:56:25.476Z",
    "stats": {
     "queryHits": 0,
     "injections": 0,

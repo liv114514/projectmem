@@ -1,6 +1,6 @@
 # 项目记忆（projectmem 自动生成）
 
-> 重绘于 2026-09-13T16:54:48.853Z。**此文件是投影，勿手改**——改数据请用 pmem 命令或直接看 .pmem/events.jsonl。
+> 重绘于 2026-09-13T23:56:25.613Z。**此文件是投影，勿手改**——改数据请用 pmem 命令或直接看 .pmem/events.jsonl。
 
 ## 决策
 ### [m001] 
@@ -10,7 +10,7 @@
 
 ### [m002] 
 范式=记忆编译器：git 依赖驱动失效+证据链+断言+ROI账本，五机制查新记录在 docs/feasibility-zh.md 附录B
-- 证据：commit `f3dfafe` · 依赖 `docs/feasibility-zh.md`（核实于 2026-09-13 16:26）
+- 证据：commit `f3dfafe` · 依赖 `docs/feasibility-zh.md`（核实于 2026-09-13 23:56）
 
 ## 坑
 ### [m003] 
@@ -27,10 +27,10 @@ git push 到 github.com 上传流会卡死（GET 通 POST 卡），备用通道�
 - 证据：commit `f3dfafe`（核实于 2026-09-13 16:26）
 
 ## 进度
-### [m004] 
-v1.0.0：P0+P1 全量完成，10 个测试全绿（含 MCP stdio 往返与 git 时间戳确定性用例）
-- 证据：commit `f3dfafe` · 依赖 `pmem.js`（核实于 2026-09-13 16:26）
-
 ### [m007] 
 仓库已开源：github.com/liv114514/projectmem，含 9 个 topics；README/调研文档/测试/自食用记忆全部上线
 - 证据：commit `2df89f0` · 依赖 `README.md`（核实于 2026-09-13 16:54）
+
+### [m008] 
+v1.0.0+：P0+P1 全量 + P2 部分（遥测/ROI 账本），11 测试全绿，已开源 github.com/liv114514/projectmem（9 topics）
+- 证据：commit `1ec9f3d` · 依赖 `pmem.js`（核实于 2026-09-13 23:56）
