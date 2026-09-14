@@ -228,6 +228,63 @@ test('只读命令不创建存储（不在无关目录留 .pmem）', () => {
   assert.ok(!existsSync(path.join(tmp, '.pmem')));
 });
 
+test('安全：写入自动脱敏密钥', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  const r = run(['add', 'note', '我的 key 是 ghp_Abcdef1234567890Abcdef1234567890ABCD 别外传', '--tag', 'keys'], tmp);
+  assert.ok(r.stderr.includes('脱敏'), '应有脱敏警告');
+  const shown = JSON.parse(run(['show', 'm001'], tmp).stdout);
+  assert.ok(shown.text.includes('[REDACTED:github_token]'), '正文应被替换');
+  assert.ok(!shown.text.includes('ghp_Abcdef'), '原值不得落盘');
+  const md = readFileSync(path.join(tmp, '.pmem', 'MEMORY.md'), 'utf8');
+  assert.ok(!md.includes('ghp_Abcdef'), '投影里也不能有');
+});
+
+test('安全：verify 哈希链——正常通过，篡改即报', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  run(['add', 'note', '第一条'], tmp);
+  run(['add', 'note', '第二条'], tmp);
+  let r = run(['security', 'verify'], tmp);
+  assert.equal(r.status, 0);
+  assert.ok(r.stdout.includes('完整性校验通过'));
+  // 篡改第一行
+  const p = path.join(tmp, '.pmem', 'events.jsonl');
+  const lines = readFileSync(p, 'utf8').split('\n');
+  lines[0] = lines[0].replace('第一条', '被篡改的第一条');
+  writeFileSync(p, lines.join('\n'), 'utf8');
+  r = run(['security', 'verify'], tmp);
+  assert.equal(r.status, 1);
+  assert.ok(r.stdout.includes('哈希校验失败'));
+});
+
+test('安全：scan 发现旧密钥，--fix 就地脱敏', () => {
+  const tmp = mktmp();
+  const envNoRedact = { ...process.env, PMEM_NO_REDACT: '1' };
+  spawnSync(process.execPath, [PMEM, 'init'], { cwd: tmp, encoding: 'utf8' });
+  spawnSync(process.execPath, [PMEM, 'add', 'note', 'password=SuperSecret12345 存这里'], { cwd: tmp, encoding: 'utf8', env: envNoRedact });
+  let r = run(['security', 'scan'], tmp);
+  assert.equal(r.status, 1, '有发现应退出码 1');
+  assert.ok(r.stdout.includes('credential_assign'));
+  r = run(['security', 'scan', '--fix'], tmp);
+  assert.ok(r.stdout.includes('已就地脱敏'));
+  const shown = JSON.parse(run(['show', 'm001'], tmp).stdout);
+  assert.ok(shown.text.includes('[REDACTED:credential_assign]'));
+  assert.ok(!shown.text.includes('SuperSecret'));
+  r = run(['security', 'verify'], tmp);
+  assert.equal(r.status, 0, '脱敏留痕后哈希链应仍连续');
+});
+
+test('安全：依赖路径越出项目根被拒绝', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  const r = run(['add', 'note', '外部文件', '--file', '../outside.txt'], tmp);
+  assert.equal(r.status, 2);
+  assert.ok(r.stderr.includes('拒绝登记'));
+  const shown = run(['list'], tmp);
+  assert.ok(shown.stdout.includes('（空）'), '不应留下半条记忆');
+});
+
 test('MCP stdio server 往返', async () => {
   const tmp = mktmp();
   const child = spawn(process.execPath, [PMEM, 'mcp'], { cwd: tmp });

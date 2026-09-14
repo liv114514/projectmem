@@ -92,6 +92,16 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 **CI 卡口**：`pmem check` 退出码非 0 即失败——决策被违反或记忆过期，构建直接红。
 
+## 安全
+
+记忆要进 git、可能推上 GitHub——所以安全不是可选项，是默认行为：
+
+- **密钥防泄漏（写入即脱敏，默认开启）**：GitHub/OpenAI/AWS/Slack/Google 的 token、JWT、私钥块、`password=…` 类赋值，写入前自动替换为 `[REDACTED:<类型>]`，**原值不落盘**。宁可漏存，不可泄密。
+- **完整性哈希链**：事件日志每条带 SHA-256 链式哈希，`pmem security verify` 可检测历史记录被篡改（谁改过、第几行）。
+- **注入检测**：`pmem security scan` 会标记疑似提示注入的记忆（"ignore previous instructions" 类），报告不阻断。
+- **路径围栏**：登记文件依赖越出项目根（`../`、绝对路径外逃）直接拒绝。
+- **CI 卡口**：`pmem security scan`（有发现退出码 1）与 `pmem check`、`pmem security verify` 都可挂 CI。
+
 ## 存储布局（全部可提交进 git）
 
 ```

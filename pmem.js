@@ -11,10 +11,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const DIR = '.pmem';
 const INDEX = 'index.json';
 const EVENTS = 'events.jsonl';
@@ -110,7 +111,63 @@ function writeIndex(idx) {
 }
 
 function appendEvent(ev) {
-  fs.appendFileSync(dirPath(EVENTS), JSON.stringify(Object.assign({ ts: nowIso() }, ev)) + '\n', 'utf8');
+  // 完整性哈希链：h = sha256(上一条h | 本条内容)，篡改历史会在 verify 时现形
+  const file = dirPath(EVENTS);
+  let prev = '';
+  if (fs.existsSync(file)) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim());
+    if (lines.length) {
+      try { prev = JSON.parse(lines[lines.length - 1]).h || ''; } catch { prev = ''; }
+    }
+  }
+  const body = Object.assign({ ts: nowIso() }, ev);
+  const h = crypto.createHash('sha256').update(prev + '|' + JSON.stringify(body)).digest('hex').slice(0, 16);
+  fs.appendFileSync(file, JSON.stringify(Object.assign(body, { h })) + '\n', 'utf8');
+}
+
+/* ---------------- 安全模块：密钥脱敏 / 注入检测 / 路径围栏 ---------------- */
+const SECRET_RULES = [
+  { type: 'github_token', re: /\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})\b/g },
+  { type: 'aws_key', re: /\bAKIA[0-9A-Z]{16}\b/g },
+  { type: 'openai_key', re: /\bsk-(?:proj-)?[A-Za-z0-9-_]{20,}\b/g },
+  { type: 'anthropic_key', re: /\bsk-ant-[A-Za-z0-9-_]{20,}\b/g },
+  { type: 'slack_token', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
+  { type: 'google_api_key', re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  { type: 'jwt', re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b/g },
+  { type: 'private_key', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g },
+  { type: 'bearer_token', re: /\bBearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}/g },
+  { type: 'credential_assign', re: /\b(?:api[_-]?key|apikey|secret|token|password|passwd|pwd|credentials?|access[_-]?key|private[_-]?key|auth[_-]?token)\s*[:=]\s*["']?[^\s"'\[]{8,}/gi },
+];
+const INJECTION_RE = /(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|prompts|rules)|system\s*prompt|you\s+must\s+now\s+obey/i;
+
+function redactSecrets(text) {
+  let out = String(text);
+  const hits = [];
+  for (const r of SECRET_RULES) {
+    out = out.replace(r.re, () => { hits.push(r.type); return `[REDACTED:${r.type}]`; });
+  }
+  return { text: out, hits };
+}
+
+function applyRedaction(text, tags, where) {
+  if (process.env.PMEM_NO_REDACT === '1') return { text, tags };
+  const t = redactSecrets(text);
+  const hits = [...t.hits];
+  const redTags = (tags || []).map((g) => { const r = redactSecrets(g); hits.push(...r.hits); return r.text; });
+  if (hits.length) {
+    process.stderr.write(`🔐 ${where}已自动脱敏 ${hits.length} 处（${[...new Set(hits)].join('/')}），原值未保存\n`);
+  }
+  return { text: t.text, tags: redTags };
+}
+
+// 路径围栏：证据依赖必须留在项目根内，拒绝 ../ 与绝对路径外逃
+function depRel(f) {
+  const abs = path.resolve(cwd(), f);
+  const rel = path.relative(cwd(), abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`依赖路径越出项目根，拒绝登记：${f}（证据链应留在项目内）`);
+  }
+  return toPosix(rel);
 }
 
 function nextId(idx) {
@@ -342,13 +399,15 @@ function cmdAdd(argv, forcedType) {
   if (!content) die('正文不能为空。例：pmem add decision "本项目零依赖"');
 
   const idx = readIndex();
-  const deps = [...new Set(files.map((f) => toPosix(path.relative(cwd(), path.resolve(cwd(), f)))))];
+  let deps;
+  try { deps = [...new Set(files.map((f) => depRel(f)))]; } catch (e) { die(e.message); } // 越出项目根的路径在这里被拒绝
   if (asserts.length > 1) process.stderr.write('提示：一条记忆只挂一条断言，已保留第一条，其余忽略（拆成多条记忆可各自挂断言）\n');
+  const red = applyRedaction(content, tags, '');
   const entry = {
     id: nextId(idx),
     type,
-    text: content,
-    tags,
+    text: red.text,
+    tags: red.tags,
     deps,
     evidence: { commit: currentCommit(), files: deps.slice() },
     assert: asserts[0] || null,
@@ -614,12 +673,13 @@ function mcpDispatch(name, args) {
   switch (name) {
     case 'pmem_add': {
       const idx = readIndex();
+      const red = applyRedaction(String(args.text || ''), args.tags || [], '');
       const entry = {
         id: nextId(idx),
         type: TYPES[args.type] ? args.type : 'note',
-        text: String(args.text || ''),
-        tags: args.tags || [],
-        deps: (args.files || []).map((f) => toPosix(path.relative(cwd(), path.resolve(cwd(), f)))),
+        text: red.text,
+        tags: red.tags,
+        deps: (args.files || []).map((f) => depRel(f)),
         evidence: { commit: currentCommit(), files: [] },
         assert: args.assert ? parseAssert(String(args.assert)) : null,
         status: 'active', staleReasons: [],
@@ -808,6 +868,71 @@ function cmdAgentInstructions() {
   console.log(agentInstructionsBlock());
 }
 
+/* ---------------- security：安全扫描与完整性校验 ---------------- */
+function cmdSecurity(args) {
+  const sub = args[0] || '';
+  if (sub !== 'scan' && sub !== 'verify') {
+    die('用法：pmem security scan [--fix]（扫描记忆中的密钥/疑似注入）| pmem security verify（事件日志哈希链完整性校验）');
+  }
+  if (needStorageHint('做安全检查')) return;
+  if (sub === 'verify') return securityVerify();
+  return securityScan(args.includes('--fix'));
+}
+
+function securityVerify() {
+  const raw = fs.readFileSync(dirPath(EVENTS), 'utf8');
+  const lines = raw.split('\n').filter((l) => l.trim());
+  let prev = '', firstChain = -1, checked = 0, broken = 0;
+  lines.forEach((line, i) => {
+    let obj;
+    try { obj = JSON.parse(line); } catch { broken++; if (broken === 1) console.log(`❌ 第 ${i + 1} 行不是合法 JSON`); return; }
+    if (obj.h === undefined) return; // 哈希链引入前的旧事件，跳过
+    if (firstChain < 0) firstChain = i + 1;
+    const expect = crypto.createHash('sha256').update(prev + '|' + JSON.stringify(Object.assign({}, obj, { h: undefined }))).digest('hex').slice(0, 16);
+    if (expect !== obj.h) {
+      broken++;
+      if (broken === 1) console.log(`❌ 第 ${i + 1} 行哈希校验失败（应为 ${expect}，实际 ${obj.h}）——该行之后的内容可能被篡改`);
+    } else checked++;
+    prev = obj.h;
+  });
+  if (firstChain < 0) console.log('✅ 事件日志无哈希链记录（旧版写入），无可校验内容——新写入的事件将带链');
+  else if (!broken) console.log(`✅ 完整性校验通过：自第 ${firstChain} 行起的 ${checked} 条事件哈希链连续，未发现篡改`);
+  else { console.log(`❌ 共 ${broken} 处异常。可用只读方式核对 .pmem/events.jsonl，必要时删掉损坏行之后重建记忆`); process.exitCode = 1; }
+}
+
+function securityScan(fix) {
+  const idx = readIndex();
+  const findings = [];
+  for (const e of idx.entries) {
+    const r = redactSecrets(e.text);
+    const tagHits = (e.tags || []).flatMap((g) => redactSecrets(g).hits);
+    const hits = [...r.hits, ...tagHits];
+    const inj = INJECTION_RE.test(e.text);
+    if (hits.length || inj) findings.push({ e, hits, inj, text: r.text });
+  }
+  if (!findings.length) return console.log('✅ 安全扫描完成：所有记忆未发现密钥或疑似注入内容');
+  for (const f of findings) {
+    console.log(`${f.inj ? '⚠️ 疑似注入' : '🔑 密钥'} [${f.e.id}] ${[...new Set(f.hits)].join('/') || '-'}  ${f.e.text.slice(0, 44)}${f.e.text.length > 44 ? '…' : ''}`);
+  }
+  if (fix) {
+    let n = 0;
+    for (const f of findings) {
+      if (f.hits.length) {
+        f.e.text = f.text;
+        f.e.tags = (f.e.tags || []).map((g) => redactSecrets(g).text);
+        appendEvent({ e: 'redact', id: f.e.id, types: [...new Set(f.hits)] });
+        n++;
+      }
+    }
+    writeIndex(idx);
+    render();
+    console.log(`✅ 已就地脱敏 ${n} 条（原值不保存，事件日志留痕）`);
+  } else {
+    console.log('→ 执行 pmem security scan --fix 可就地脱敏（不可逆）；也可在 CI 挂此命令，有发现即退出码 1');
+    process.exitCode = 1;
+  }
+}
+
 /* ---------------- 入口 ---------------- */
 const HELP = `projectmem (pmem) v${VERSION} — 零依赖的"项目记忆编译器"
 记忆不是笔记，是编译产物：会失效、带证据、能断言、算得清收益。
@@ -834,6 +959,8 @@ const HELP = `projectmem (pmem) v${VERSION} — 零依赖的"项目记忆编译�
   setup [--yes]                 一键安装：装 pmem 命令 + 配 PATH + 打印 MCP/钩子/agent 约定配置
   hook session-start            给 agent 钩子用：静默失效扫描 + 断言 + 注入记忆（一段输出搞定）
   agent-instructions            打印可粘贴进 CLAUDE.md/AGENTS.md 的"agent 自动记忆约定"
+  security scan [--fix]         扫描记忆中的密钥/疑似注入（--fix 就地脱敏；有发现退出码 1，可挂 CI）
+  security verify               事件日志哈希链完整性校验（检测历史被篡改）
 
 例：
   pmem init
@@ -865,6 +992,7 @@ function main() {
     case 'setup': return cmdSetup(rest).catch((e) => die(e.message));
     case 'hook': return cmdHook(rest);
     case 'agent-instructions': return cmdAgentInstructions();
+    case 'security': return cmdSecurity(rest);
     case undefined:
     case 'help':
     case '--help':

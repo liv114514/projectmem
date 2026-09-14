@@ -1,6 +1,6 @@
 {
   "name": "projectmem",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "零依赖的项目记忆编译器：记忆会失效、带证据、能断言、算得清收益。Zero-dependency project memory compiler for AI coding agents.",
   "main": "pmem.js",
   "bin": { "pmem": "pmem.js" },
