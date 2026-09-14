@@ -1,5 +1,5 @@
 {
- "seq": 10,
+ "seq": 13,
  "entries": [
   {
    "id": "m001",
@@ -259,6 +259,77 @@
    "staleReasons": [],
    "createdAt": "2026-09-14T01:03:05.144Z",
    "verifiedAt": "2026-09-14T01:03:05.145Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m011",
+   "type": "pitfall",
+   "text": "gh 的 OAuth token 无 workflow scope 时不能动 .github/workflows/：REST PATCH ref 返回 404、GraphQL FORBIDDEN、git push 表现为卡死；修复=gh auth refresh -s workflow（需浏览器授权）",
+   "tags": [
+    "github"
+   ],
+   "deps": [],
+   "evidence": {
+    "commit": "b8622c4d41c9398f31feac29d3cc8f7da56c80cb",
+    "files": []
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-14T05:41:52.016Z",
+   "verifiedAt": "2026-09-14T05:41:52.017Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m012",
+   "type": "pitfall",
+   "text": "测试/文档里别放假 provider token 字面量（如 40 字符 ghp_xxx）：会触发 GitHub 密钥推送保护；测脱敏管线用 password=xxx 通用赋值形态即可",
+   "tags": [
+    "security"
+   ],
+   "deps": [],
+   "evidence": {
+    "commit": "b8622c4d41c9398f31feac29d3cc8f7da56c80cb",
+    "files": []
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-14T05:41:52.103Z",
+   "verifiedAt": "2026-09-14T05:41:52.103Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m013",
+   "type": "progress",
+   "text": "社区化完成：双语 README/issue 模板/CHANGELOG/推广文案草稿/13 topics(含 vibe-coding)/Discussions+欢迎帖；CI 待 workflow scope 后启用",
+   "tags": [],
+   "deps": [
+    "CHANGELOG.md"
+   ],
+   "evidence": {
+    "commit": "b8622c4d41c9398f31feac29d3cc8f7da56c80cb",
+    "files": [
+     "CHANGELOG.md"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-14T05:41:52.185Z",
+   "verifiedAt": "2026-09-14T05:41:52.186Z",
    "stats": {
     "queryHits": 0,
     "injections": 0,

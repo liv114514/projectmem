@@ -1,6 +1,6 @@
 # 项目记忆（projectmem 自动生成）
 
-> 重绘于 2026-09-14T01:03:05.356Z。**此文件是投影，勿手改**——改数据请用 pmem 命令或直接看 .pmem/events.jsonl。
+> 重绘于 2026-09-14T05:41:52.192Z。**此文件是投影，勿手改**——改数据请用 pmem 命令或直接看 .pmem/events.jsonl。
 
 ## 决策
 ### [m001] ⚠️（已变旧）
@@ -21,6 +21,14 @@
 git push 到 github.com 上传流会卡死（GET 通 POST 卡），备用通道：node /d/Zcode work/.tools/push-via-api.js 走 api.github.com 的 Git Data API；注意 GitHub 会把提交时间归一为 UTC(+0000)
 - 证据：commit `2df89f0`（核实于 2026-09-13 16:54）
 
+### [m011] 
+gh 的 OAuth token 无 workflow scope 时不能动 .github/workflows/：REST PATCH ref 返回 404、GraphQL FORBIDDEN、git push 表现为卡死；修复=gh auth refresh -s workflow（需浏览器授权）
+- 证据：commit `b8622c4`（核实于 2026-09-14 05:41）
+
+### [m012] 
+测试/文档里别放假 provider token 字面量（如 40 字符 ghp_xxx）：会触发 GitHub 密钥推送保护；测脱敏管线用 password=xxx 通用赋值形态即可
+- 证据：commit `b8622c4`（核实于 2026-09-14 05:41）
+
 ## 偏好
 ### [m005] 
 交付纪律：先给点一下就能用的形态，原理放后面；对外动作拿不准先问一句
@@ -38,3 +46,7 @@ v1.1.1：新增一键安装（setup/install.cmd）、会话启动钩子、agent 
 ### [m010] 
 v1.2.0 安全模块上线：写入脱敏+哈希链+注入检测+路径围栏，20 测试全绿
 - 证据：commit `6c18f92` · 依赖 `pmem.js`（核实于 2026-09-14 01:03）
+
+### [m013] 
+社区化完成：双语 README/issue 模板/CHANGELOG/推广文案草稿/13 topics(含 vibe-coding)/Discussions+欢迎帖；CI 待 workflow scope 后启用
+- 证据：commit `b8622c4` · 依赖 `CHANGELOG.md`（核实于 2026-09-14 05:41）

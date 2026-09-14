@@ -11,8 +11,9 @@
 - **路径围栏**：文件依赖越出项目根拒绝登记（CLI exit 2 / MCP isError）
 
 ### 反馈与社区
-- GitHub Actions CI（ubuntu/windows × node 20/22 矩阵）
-- Issue 模板（bug/feature）+ Discussions 反馈渠道
+- Issue 模板（bug/feature）+ Discussions 反馈渠道（含欢迎帖）
+- 双语 README（中文/English 切换）
+- GitHub Actions CI 待 workflow scope 授权后启用（文件备好在 `docs/ci-workflow.pending.yml`）
 
 ## [1.1.0] - 2026-09-14
 
