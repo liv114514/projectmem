@@ -1,5 +1,11 @@
 # projectmem（pmem）
 
+**[中文](README.md) | [English](README.en.md)**
+
+<!-- CI 徽章待 workflow scope 授权后启用（见 docs/ci-workflow.pending.yml） -->
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Node](https://img.shields.io/node/v/projectmem)
+
 > 零依赖的**项目记忆编译器**——让 AI 编程 agent 跨会话记住你的项目：做过什么、定了什么、踩过什么坑，代码一变记忆自动变旧。
 >
 > **Zero-dependency project memory compiler for AI coding agents.** Memory that expires by git, carries receipts, runs assertions, and shows its own ROI.
@@ -140,6 +146,13 @@ npm test        # node --test test/（含 MCP stdio 往返测试）
 
 调研、查新与可行性论证全文：[docs/feasibility-zh.md](docs/feasibility-zh.md)。
 
+## 反馈与共建
+
+- **报 bug / 提需求**：[Issues](https://github.com/liv114514/projectmem/issues)（模板会引导你贴诊断信息；先跑 `pmem security scan` 确认不带密钥）
+- **用法讨论 / 晒你的玩法**：[Discussions](https://github.com/liv114514/projectmem/discussions)
+- 觉得省下了重新交代背景的时间，就点个 ⭐——这是独立开发者的全部推广预算
+- 版本变更见 [CHANGELOG.md](CHANGELOG.md)
+
 ## License
 
-MIT
+MIT © [liv114514](https://github.com/liv114514)

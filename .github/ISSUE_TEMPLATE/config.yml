@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 用法讨论 / 晒你的用法（Discussions）
+    about: 使用疑问、经验分享、想看别人怎么用 — 用法问题请到这里 / Questions and show-and-tell
+    url: https://github.com/liv114514/projectmem/discussions

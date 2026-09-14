@@ -231,13 +231,16 @@ test('只读命令不创建存储（不在无关目录留 .pmem）', () => {
 test('安全：写入自动脱敏密钥', () => {
   const tmp = mktmp();
   run(['init'], tmp);
-  const r = run(['add', 'note', '我的 key 是 ghp_Abcdef1234567890Abcdef1234567890ABCD 别外传', '--tag', 'keys'], tmp);
+  // 注意：测试里不能放假的 provider token 形态字符串（ghp_/AKIA 等长得像真密钥），
+  // 否则会被 GitHub 密钥推送保护拦截、无法 push——2026-09-14 实测踩坑。
+  // github_token 等规则的长度校验靠正则本身保证，这里只测通用赋值形态的脱敏管线。
+  const r = run(['add', 'note', '数据库配置 password=SuperSecret12345 以及 token:AbcdefToken12345678 记好了', '--tag', 'keys'], tmp);
   assert.ok(r.stderr.includes('脱敏'), '应有脱敏警告');
   const shown = JSON.parse(run(['show', 'm001'], tmp).stdout);
-  assert.ok(shown.text.includes('[REDACTED:github_token]'), '正文应被替换');
-  assert.ok(!shown.text.includes('ghp_Abcdef'), '原值不得落盘');
+  assert.ok(shown.text.includes('[REDACTED:credential_assign]'), '正文应被替换');
+  assert.ok(!shown.text.includes('SuperSecret12345'), '原值不得落盘');
   const md = readFileSync(path.join(tmp, '.pmem', 'MEMORY.md'), 'utf8');
-  assert.ok(!md.includes('ghp_Abcdef'), '投影里也不能有');
+  assert.ok(!md.includes('SuperSecret12345'), '投影里也不能有');
 });
 
 test('安全：verify 哈希链——正常通过，篡改即报', () => {

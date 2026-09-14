@@ -1,5 +1,5 @@
 {
- "seq": 9,
+ "seq": 10,
  "entries": [
   {
    "id": "m001",
@@ -20,8 +20,10 @@
    "assert": {
     "kind": "no-deps"
    },
-   "status": "active",
-   "staleReasons": [],
+   "status": "stale",
+   "staleReasons": [
+    "package.json 在核实后变更过（6c18f92）"
+   ],
    "createdAt": "2026-09-13T16:26:30.073Z",
    "verifiedAt": "2026-09-14T00:54:19.201Z",
    "stats": {
@@ -166,8 +168,10 @@
     ]
    },
    "assert": null,
-   "status": "active",
-   "staleReasons": [],
+   "status": "stale",
+   "staleReasons": [
+    "README.md 在核实后变更过（6c18f92）"
+   ],
    "createdAt": "2026-09-13T16:54:48.851Z",
    "verifiedAt": "2026-09-14T00:54:19.263Z",
    "stats": {
@@ -222,10 +226,39 @@
     ]
    },
    "assert": null,
-   "status": "active",
-   "staleReasons": [],
+   "status": "stale",
+   "staleReasons": [
+    "pmem.js 在核实后变更过（6c18f92）"
+   ],
    "createdAt": "2026-09-14T00:54:19.403Z",
    "verifiedAt": "2026-09-14T00:54:19.404Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m010",
+   "type": "progress",
+   "text": "v1.2.0 安全模块上线：写入脱敏+哈希链+注入检测+路径围栏，20 测试全绿",
+   "tags": [
+    "milestone"
+   ],
+   "deps": [
+    "pmem.js"
+   ],
+   "evidence": {
+    "commit": "6c18f92e8579b024d392c3ebef7ecc65decc6635",
+    "files": [
+     "pmem.js"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-14T01:03:05.144Z",
+   "verifiedAt": "2026-09-14T01:03:05.145Z",
    "stats": {
     "queryHits": 0,
     "injections": 0,

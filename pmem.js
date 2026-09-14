@@ -846,6 +846,7 @@ async function cmdSetup(argv) {
     console.log('\n【agent 自动记忆约定（可选，粘贴进 CLAUDE.md / AGENTS.md，agent 就会自动记/自动查）】');
     console.log(agentInstructionsBlock());
     console.log(`\n完成。新开一个终端，进任意项目目录运行：pmem init && pmem roi  验证。`);
+    console.log('反馈/求助/晒用法：https://github.com/liv114514/projectmem/issues 或 /discussions');
   } finally { if (rl) rl.close(); }
 }
 
