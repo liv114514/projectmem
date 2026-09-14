@@ -14,7 +14,7 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const DIR = '.pmem';
 const INDEX = 'index.json';
 const EVENTS = 'events.jsonl';
@@ -51,11 +51,54 @@ function ensureStorage() {
   return { created: false };
 }
 
+function hasStorage() {
+  return fs.existsSync(dirPath(INDEX)) || fs.existsSync(dirPath(EVENTS));
+}
+
+// 只读命令的前置：没存储就给提示并跳过，避免在无关目录悄悄建 .pmem
+function needStorageHint(action) {
+  if (hasStorage()) return false;
+  console.log(`本项目还没有 projectmem 存储（无 .pmem/ 目录）。先运行 pmem init 或 pmem add 写下第一条，再${action}。`);
+  return true;
+}
+
+function replayEvents() {
+  const raw = fs.existsSync(dirPath(EVENTS)) ? fs.readFileSync(dirPath(EVENTS), 'utf8') : '';
+  const idx = { seq: 0, entries: [] };
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch { continue; }
+    const e = idx.entries.find((x) => x.id === ev.id);
+    if (ev.e === 'add' && ev.entry) {
+      idx.entries.push(Object.assign({}, ev.entry));
+      const n = parseInt(ev.entry.id.replace('m', ''), 10);
+      if (n > idx.seq) idx.seq = n;
+    } else if (ev.e === 'stale' && e) {
+      e.status = 'stale';
+      e.staleReasons = ev.reasons || [];
+    } else if (ev.e === 'fresh' && e) {
+      e.status = 'active';
+      e.staleReasons = [];
+      e.verifiedAt = ev.ts;
+    } else if (ev.e === 'archive' && e) {
+      e.status = 'archived';
+    }
+  }
+  return idx;
+}
+
 function readIndex() {
   try {
     return JSON.parse(fs.readFileSync(dirPath(INDEX), 'utf8'));
   } catch {
-    return { seq: 0, entries: [] };
+    // 原子写让损坏概率极低；真发生了就从事件日志重建，别让用户对着空库重录
+    const idx = replayEvents();
+    if (idx.entries.length) {
+      process.stderr.write(`[projectmem] index.json 不可读，已从事件日志重建（${idx.entries.length} 条）\n`);
+      try { writeIndex(idx); } catch { /* 重写失败也不阻塞本次读 */ }
+    }
+    return idx;
   }
 }
 
@@ -104,12 +147,19 @@ const isGitRepo = () => !!git(['rev-parse', '--is-inside-work-tree']);
 const currentCommit = () => git(['rev-parse', 'HEAD']);
 const commitShort = (h) => (h ? h.slice(0, 7) : null);
 
-// 文件最近一次变更时间：git 提交时间优先，无 git / 未跟踪文件退回 mtime
-function lastChangeTs(absFile) {
+// 文件最近一次变更：git 提交优先（带 commit 收据），无 git / 未跟踪文件退回 mtime。memo 进程内缓存。
+function lastChange(absFile, memo) {
+  if (memo && memo.has(absFile)) return memo.get(absFile);
   const rel = toPosix(path.relative(cwd(), absFile));
-  const out = git(['log', '-1', '--format=%ct', '--', rel]);
-  if (out && /^\d+$/.test(out)) return parseInt(out, 10) * 1000;
-  try { return fs.statSync(absFile).mtimeMs; } catch { return 0; }
+  const out = git(['log', '-1', '--format=%H %ct', '--', rel]);
+  let res = null;
+  const m = out && out.match(/^(\S+)\s+(\d+)$/);
+  if (m) res = { ts: parseInt(m[2], 10) * 1000, hash: m[1].slice(0, 7) };
+  if (!res) {
+    try { res = { ts: fs.statSync(absFile).mtimeMs, hash: null }; } catch { res = { ts: 0, hash: null }; }
+  }
+  if (memo) memo.set(absFile, res);
+  return res;
 }
 
 /* ---------------- 记忆条目 ---------------- */
@@ -156,19 +206,44 @@ function runAssert(a) {
 }
 
 // 依赖驱动的失效判定：文件没了 / 文件在"核实时间"之后变过 → stale。时间衰减只做兜底展示。
-function checkFreshness(entry) {
+function checkFreshness(entry, memo) {
   if (!entry.deps || !entry.deps.length) return { stale: false, reasons: [] };
   const reasons = [];
+  const baseline = new Date(entry.verifiedAt || entry.createdAt).getTime();
   for (const dep of entry.deps) {
     const abs = path.resolve(cwd(), dep);
     if (!fs.existsSync(abs)) { reasons.push(`文件已不存在：${dep}`); continue; }
-    const ts = lastChangeTs(abs);
-    const baseline = new Date(entry.verifiedAt || entry.createdAt).getTime();
-    if (ts > baseline + STALE_GRACE_MS) {
-      reasons.push(`${dep} 在核实后变更过（${commitShort(currentCommit()) || '工作区'} 时点检测）`);
+    const c = lastChange(abs, memo);
+    if (c.ts > baseline + STALE_GRACE_MS) {
+      reasons.push(`${dep} 在核实后变更过${c.hash ? '（' + c.hash + '）' : ''}`);
     }
   }
   return { stale: reasons.length > 0, reasons };
+}
+
+// cmdStale 与 cmdHook 共用的失效扫描：返回统计，变更写回索引。revived=改动撤销自动复活。
+function scanFreshness(idx, via) {
+  const memo = new Map();
+  const stats = { checked: 0, newly: 0, still: 0, ok: 0, revived: 0 };
+  for (const e of idx.entries) {
+    if (e.status === 'archived') continue;
+    stats.checked++;
+    const r = checkFreshness(e, memo);
+    if (r.stale) {
+      if (e.status !== 'stale') { stats.newly++; appendEvent({ e: 'stale', id: e.id, reasons: r.reasons, via }); }
+      else stats.still++;
+      e.status = 'stale';
+      e.staleReasons = r.reasons;
+    } else if (e.status === 'stale') {
+      e.status = 'active';
+      e.staleReasons = [];
+      appendEvent({ e: 'fresh', id: e.id, reason: '依赖重新一致（自动复核）', via });
+      stats.revived++;
+      stats.ok++;
+    } else stats.ok++;
+  }
+  if (stats.newly + stats.still + stats.revived > 0) writeIndex(idx);
+  return stats;
 }
 
 /* ---------------- 检索评分（BM25-lite） ---------------- */
@@ -268,6 +343,7 @@ function cmdAdd(argv, forcedType) {
 
   const idx = readIndex();
   const deps = [...new Set(files.map((f) => toPosix(path.relative(cwd(), path.resolve(cwd(), f)))))];
+  if (asserts.length > 1) process.stderr.write('提示：一条记忆只挂一条断言，已保留第一条，其余忽略（拆成多条记忆可各自挂断言）\n');
   const entry = {
     id: nextId(idx),
     type,
@@ -275,7 +351,7 @@ function cmdAdd(argv, forcedType) {
     tags,
     deps,
     evidence: { commit: currentCommit(), files: deps.slice() },
-    assert: asserts[0] || null, // 一条一个断言，够用且可预期
+    assert: asserts[0] || null,
     status: 'active',
     staleReasons: [],
     createdAt: nowIso(),
@@ -284,13 +360,13 @@ function cmdAdd(argv, forcedType) {
   };
   idx.entries.push(entry);
   writeIndex(idx);
-  appendEvent({ e: 'add', id: entry.id, type, deps });
+  appendEvent({ e: 'add', id: entry.id, type, deps, entry }); // 带完整正文：index 损坏时可从事件日志重建
   render();
   console.log(`已记录 ${entryLine(entry)}\n（${entry.deps.length ? '失效检查依赖 git 记录' : '未登记文件依赖，不会自动变旧；加 --file 可启用'}）`);
 }
 
 function cmdList(argv) {
-  ensureStorage();
+  if (needStorageHint('列出')) return;
   let type = null, status = 'active,stale', limit = 20;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--type') type = argv[++i];
@@ -307,14 +383,14 @@ function cmdList(argv) {
 }
 
 function cmdShow([id]) {
-  ensureStorage();
+  if (needStorageHint('查看')) return;
   const idx = readIndex();
   const e = findEntry(idx, id);
   console.log(JSON.stringify(e, null, 2));
 }
 
 function cmdQuery(argv) {
-  ensureStorage();
+  if (needStorageHint('检索')) return;
   let limit = 8;
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
@@ -337,31 +413,13 @@ function cmdQuery(argv) {
 function cmdStale() {
   ensureStorage();
   const idx = readIndex();
-  const now = nowIso();
-  let newly = 0, still = 0, ok = 0, checked = 0;
-  for (const e of idx.entries) {
-    if (e.status === 'archived') continue;
-    checked++;
-    const r = checkFreshness(e);
-    if (r.stale) {
-      if (e.status !== 'stale') { newly++; appendEvent({ e: 'stale', id: e.id, reasons: r.reasons }); }
-      else still++;
-      e.status = 'stale';
-      e.staleReasons = r.reasons;
-    } else if (e.status === 'stale') { // 依赖又一致了（比如改动被撤销）→ 自动复活
-      e.status = 'active';
-      e.staleReasons = [];
-      appendEvent({ e: 'fresh', id: e.id, reason: '依赖重新一致（自动复核）' });
-      ok++;
-    } else ok++;
-  }
-  writeIndex(idx);
+  const s = scanFreshness(idx, 'cli');
   render();
-  console.log(`失效扫描完成：检查 ${checked} 条（有文件依赖的才查）`);
-  console.log(`  本轮变旧 ${newly} 条 · 维持变旧 ${still} 条 · 正常 ${ok} 条`);
+  console.log(`失效扫描完成：检查 ${s.checked} 条（有文件依赖的才查）`);
+  console.log(`  本轮变旧 ${s.newly} 条 · 维持变旧 ${s.still} 条 · 恢复/正常 ${s.ok} 条`);
   idx.entries.filter((e) => e.status === 'stale').forEach((e) =>
     console.log(`  ⚠️ [${e.id}] ${e.staleReasons.join('；')}\n      → ${e.text.slice(0, 40)}${e.text.length > 40 ? '…' : ''}\n      → 核实后执行 pmem fresh ${e.id}`));
-  if (newly + still === 0) console.log('  所有依赖过的记忆都还是新鲜的。');
+  if (s.newly + s.still === 0) console.log('  所有依赖过的记忆都还是新鲜的。');
 }
 
 function cmdFresh([id]) {
@@ -389,7 +447,7 @@ function cmdArchive([id]) {
 }
 
 function cmdCheck() {
-  ensureStorage();
+  if (needStorageHint('检查断言')) return;
   const idx = readIndex();
   const withAssert = idx.entries.filter((e) => e.assert && e.status !== 'archived');
   if (!withAssert.length) return console.log('没有带断言的记忆。记录时加 --assert，例：pmem add decision "零依赖" --assert no-deps');
@@ -449,7 +507,7 @@ function cmdInject(argv) {
 }
 
 function cmdRoi() {
-  ensureStorage();
+  if (needStorageHint('记账')) return;
   const idx = readIndex();
   const rows = idx.entries
     .filter((e) => e.status !== 'archived')
@@ -500,7 +558,7 @@ function render() {
 }
 
 function cmdLog(argv) {
-  ensureStorage();
+  if (needStorageHint('看日志')) return;
   let limit = 20;
   const li = argv.indexOf('--limit');
   if (li >= 0) limit = parseInt(argv[li + 1], 10) || 20;
@@ -571,7 +629,7 @@ function mcpDispatch(name, args) {
       entry.evidence.files = entry.deps.slice();
       idx.entries.push(entry);
       writeIndex(idx);
-      appendEvent({ e: 'add', id: entry.id, type: entry.type, via: 'mcp' });
+      appendEvent({ e: 'add', id: entry.id, type: entry.type, via: 'mcp', entry });
       render();
       return `已记录 ${entry.id}（${TYPES[entry.type].label}）：${entry.text}`;
     }
@@ -734,24 +792,14 @@ async function cmdSetup(argv) {
 /* ---------------- hook：给 agent 钩子用的静默入口 ---------------- */
 function cmdHook(args) {
   if (args[0] !== 'session-start') die('目前只支持：pmem hook session-start');
-  ensureStorage();
+  if (!hasStorage()) return; // 无存储的项目静默退出：不制造 .pmem，不污染会话上下文
   const idx = readIndex();
-  let staleNow = 0;
-  for (const e of idx.entries) {
-    if (e.status === 'archived') continue;
-    const r = checkFreshness(e);
-    if (r.stale) {
-      if (e.status !== 'stale') { appendEvent({ e: 'stale', id: e.id, reasons: r.reasons, via: 'hook' }); staleNow++; }
-      e.status = 'stale';
-      e.staleReasons = r.reasons;
-    }
-  }
-  const assertFails = idx.entries.filter((e) => e.assert && e.status !== 'archived' && !runAssert(e.assert).pass);
-  if (idx.entries.some((e) => e.status === 'stale')) writeIndex(idx);
+  const s = scanFreshness(idx, 'hook');
   render();
   cmdInject(['--budget', '1500']);
-  if (staleNow || assertFails.length) {
-    console.log(`⚠️ 注意：${staleNow} 条记忆刚被检测到变旧，${assertFails.length} 条断言未过——干完活运行 pmem stale / pmem check 处理。`);
+  const assertFails = idx.entries.filter((e) => e.assert && e.status !== 'archived' && !runAssert(e.assert).pass);
+  if (s.newly || assertFails.length) {
+    console.log(`⚠️ 注意：${s.newly} 条记忆刚被检测到变旧，${assertFails.length} 条断言未过——干完活运行 pmem stale / pmem check 处理。`);
   }
 }
 

@@ -13,3 +13,11 @@
 {"ts":"2026-09-13T23:56:25.332Z","e":"fresh","id":"m002","reason":"人工复核"}
 {"ts":"2026-09-13T23:56:25.393Z","e":"archive","id":"m004"}
 {"ts":"2026-09-13T23:56:25.477Z","e":"add","id":"m008","type":"progress","deps":["pmem.js"]}
+{"ts":"2026-09-14T00:53:45.537Z","e":"stale","id":"m001","reasons":["package.json 在核实后变更过（67bbb33）"],"via":"cli"}
+{"ts":"2026-09-14T00:53:45.599Z","e":"stale","id":"m007","reasons":["README.md 在核实后变更过（67bbb33）"],"via":"cli"}
+{"ts":"2026-09-14T00:53:45.619Z","e":"stale","id":"m008","reasons":["pmem.js 在核实后变更过（67bbb33）"],"via":"cli"}
+{"ts":"2026-09-14T00:53:45.705Z","e":"check","pass":1,"fail":0}
+{"ts":"2026-09-14T00:54:19.203Z","e":"fresh","id":"m001","reason":"人工复核"}
+{"ts":"2026-09-14T00:54:19.265Z","e":"fresh","id":"m007","reason":"人工复核"}
+{"ts":"2026-09-14T00:54:19.324Z","e":"archive","id":"m008"}
+{"ts":"2026-09-14T00:54:19.404Z","e":"add","id":"m009","type":"progress","deps":["pmem.js"],"entry":{"id":"m009","type":"progress","text":"v1.1.1：新增一键安装（setup/install.cmd）、会话启动钩子、agent 记忆约定；代码审查修复 index 损坏自愈、只读命令不再建 .pmem、git 子进程经济化；16 测试全绿","tags":["milestone"],"deps":["pmem.js"],"evidence":{"commit":"67bbb332a87d40596858fccfde77fcd78152ef0f","files":["pmem.js"]},"assert":null,"status":"active","staleReasons":[],"createdAt":"2026-09-14T00:54:19.403Z","verifiedAt":"2026-09-14T00:54:19.404Z","stats":{"queryHits":0,"injections":0,"lastInjectedAt":null}}}

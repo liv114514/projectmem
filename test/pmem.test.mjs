@@ -197,7 +197,35 @@ test('setup：装垫片到隔离 HOME（不动注册表）', () => {
   const shim = readFileSync(path.join(bin, 'pmem.cmd'), 'utf8');
   assert.ok(shim.includes('pmem.js'), '垫片应指向安装目录');
   const r2 = spawnSync(process.execPath, [path.join(bin, 'pmem.js'), 'roi'], { encoding: 'utf8', cwd: tmp });
-  assert.ok(r2.stdout.includes('还没有可记账的记忆') || r2.stdout.includes('合计'), '安装副本应可独立运行');
+  assert.ok(r2.stdout.includes('还没有 projectmem 存储'), '安装副本应可独立运行（无存储时给提示）');
+});
+
+test('index.json 损坏时从事件日志自动重建', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  run(['add', 'decision', '零依赖约定', '--file', 'package.json'], tmp);
+  run(['note', '随手便签'], tmp);
+  run(['archive', 'm002'], tmp);
+  writeFileSync(path.join(tmp, '.pmem', 'index.json'), '{broken!!', 'utf8');
+  const r = run(['list', '--status', 'all'], tmp);
+  assert.ok(r.stderr.includes('重建'), '应提示已重建');
+  assert.ok(r.stdout.includes('m001') && r.stdout.includes('零依赖约定'), '正文应完整恢复');
+  const idx = JSON.parse(readFileSync(path.join(tmp, '.pmem', 'index.json'), 'utf8'));
+  assert.equal(idx.entries.length, 2);
+  assert.equal(idx.entries.find((e) => e.id === 'm002').status, 'archived', '归档状态应回放保留');
+});
+
+test('只读命令不创建存储（不在无关目录留 .pmem）', () => {
+  const tmp = mktmp();
+  const r = run(['query', '什么'], tmp);
+  assert.ok(r.stdout.includes('还没有 projectmem 存储'));
+  assert.ok(!existsSync(path.join(tmp, '.pmem')), '不应悄悄创建 .pmem');
+  const r2 = run(['check'], tmp);
+  assert.ok(r2.stdout.includes('还没有 projectmem 存储'));
+  assert.equal(r2.status, 0, '无存储时 check 不应报失败');
+  const r3 = run(['hook', 'session-start'], tmp);
+  assert.equal(r3.stdout, '', 'hook 在无存储项目应静默');
+  assert.ok(!existsSync(path.join(tmp, '.pmem')));
 });
 
 test('MCP stdio server 往返', async () => {

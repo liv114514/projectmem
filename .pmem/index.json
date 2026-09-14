@@ -1,5 +1,5 @@
 {
- "seq": 8,
+ "seq": 9,
  "entries": [
   {
    "id": "m001",
@@ -23,7 +23,7 @@
    "status": "active",
    "staleReasons": [],
    "createdAt": "2026-09-13T16:26:30.073Z",
-   "verifiedAt": "2026-09-13T16:26:30.074Z",
+   "verifiedAt": "2026-09-14T00:54:19.201Z",
    "stats": {
     "queryHits": 1,
     "injections": 1,
@@ -169,7 +169,7 @@
    "status": "active",
    "staleReasons": [],
    "createdAt": "2026-09-13T16:54:48.851Z",
-   "verifiedAt": "2026-09-13T16:54:48.851Z",
+   "verifiedAt": "2026-09-14T00:54:19.263Z",
    "stats": {
     "queryHits": 0,
     "injections": 0,
@@ -193,10 +193,39 @@
     ]
    },
    "assert": null,
-   "status": "active",
-   "staleReasons": [],
+   "status": "archived",
+   "staleReasons": [
+    "pmem.js 在核实后变更过（67bbb33）"
+   ],
    "createdAt": "2026-09-13T23:56:25.475Z",
    "verifiedAt": "2026-09-13T23:56:25.476Z",
+   "stats": {
+    "queryHits": 0,
+    "injections": 0,
+    "lastInjectedAt": null
+   }
+  },
+  {
+   "id": "m009",
+   "type": "progress",
+   "text": "v1.1.1：新增一键安装（setup/install.cmd）、会话启动钩子、agent 记忆约定；代码审查修复 index 损坏自愈、只读命令不再建 .pmem、git 子进程经济化；16 测试全绿",
+   "tags": [
+    "milestone"
+   ],
+   "deps": [
+    "pmem.js"
+   ],
+   "evidence": {
+    "commit": "67bbb332a87d40596858fccfde77fcd78152ef0f",
+    "files": [
+     "pmem.js"
+    ]
+   },
+   "assert": null,
+   "status": "active",
+   "staleReasons": [],
+   "createdAt": "2026-09-14T00:54:19.403Z",
+   "verifiedAt": "2026-09-14T00:54:19.404Z",
    "stats": {
     "queryHits": 0,
     "injections": 0,
