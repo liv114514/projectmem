@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { spawnSync, spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, utimesSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -163,6 +164,40 @@ test('archive：归档后检索不再命中', () => {
   run(['archive', 'm001'], tmp);
   const r = run(['query', 'abcxyz'], tmp);
   assert.ok(r.stdout.includes('没有命中'));
+});
+
+test('hook session-start：静默扫描+注入一段输出', () => {
+  const tmp = mktmp();
+  writeFileSync(path.join(tmp, 'a.txt'), 'x');
+  run(['init'], tmp);
+  run(['add', 'decision', 'a 文件是关键约定', '--file', 'a.txt'], tmp);
+  rmSync(path.join(tmp, 'a.txt')); // 触发失效
+  const r = run(['hook', 'session-start'], tmp);
+  assert.ok(r.stdout.includes('projectmem 项目记忆'), '应输出注入块');
+  assert.ok(r.stdout.includes('变旧'), '应提醒有记忆变旧');
+  const shown = JSON.parse(run(['show', 'm001'], tmp).stdout);
+  assert.equal(shown.status, 'stale');
+});
+
+test('agent-instructions：输出可粘贴约定', () => {
+  const tmp = mktmp();
+  const r = run(['agent-instructions'], tmp);
+  assert.ok(r.stdout.includes('projectmem 使用约定') && r.stdout.includes('pmem_add'));
+});
+
+test('setup：装垫片到隔离 HOME（不动注册表）', () => {
+  const tmp = mktmp();
+  fs.mkdirSync(path.join(tmp, 'home'), { recursive: true });
+  const env = { ...process.env, PMEM_NO_PATH: '1', USERPROFILE: path.join(tmp, 'home'), HOME: path.join(tmp, 'home') };
+  const r = spawnSync(process.execPath, [PMEM, 'setup', '--yes'], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, 'setup 应成功: ' + r.stdout + r.stderr);
+  const bin = path.join(tmp, 'home', 'bin');
+  assert.ok(existsSync(path.join(bin, 'pmem.js')), 'pmem.js 应复制到位');
+  assert.ok(existsSync(path.join(bin, 'pmem.cmd')) || !process.platform.startsWith('win') === false, 'Windows 应有 pmem.cmd');
+  const shim = readFileSync(path.join(bin, 'pmem.cmd'), 'utf8');
+  assert.ok(shim.includes('pmem.js'), '垫片应指向安装目录');
+  const r2 = spawnSync(process.execPath, [path.join(bin, 'pmem.js'), 'roi'], { encoding: 'utf8', cwd: tmp });
+  assert.ok(r2.stdout.includes('还没有可记账的记忆') || r2.stdout.includes('合计'), '安装副本应可独立运行');
 });
 
 test('MCP stdio server 往返', async () => {

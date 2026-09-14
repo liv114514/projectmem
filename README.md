@@ -28,14 +28,24 @@
 
 ## 快速开始
 
+**Windows：下载/克隆仓库 → 双击 `install.cmd` → 完事。**（没有 Node 也没关系，脚本会指路）
+
+**任何系统**：`node pmem.js setup`——自动装好全局 `pmem` 命令并配置 PATH，然后打印三份"即贴即用"配置：MCP 接入、SessionStart 自动注入钩子、**agent 自动记忆约定**。
+
+**极简党**：不装也行，就地用——
+
 ```bash
-# 不装任何东西，有 Node 就能跑（也可 npm i -g 得到 pmem 命令）
 node pmem.js init
 node pmem.js add decision "本项目零依赖，不许引入 npm 运行时依赖" --assert no-deps --file package.json
 node pmem.js query 零依赖
 ```
 
-第一条记忆带上了完整范式：**证据**（自动记录 commit + 依赖文件）、**失效源**（package.json 一变它就变旧）、**断言**（谁真装了依赖，`pmem check` 当场红牌）。
+第一条记忆就带上了完整范式：**证据**（自动记录 commit + 依赖文件）、**失效源**（package.json 一变它就变旧）、**断言**（谁真装了依赖，`pmem check` 当场红牌）。
+
+### 想要"全自动"？两步做完上面的事
+
+1. **把 `pmem agent-instructions` 输出的约定块贴进 CLAUDE.md / AGENTS.md**——从此 agent 每次会话开始自动读记忆、过程中自动记决策/进度/坑、结束前自动查失效；
+2. **把 `pmem setup` 打印的 SessionStart 钩子粘进 agent 的 settings.json**——即使 agent 偷懒，会话启动也会强制注入记忆（静默跑失效扫描 + 断言 + 按预算注入）。
 
 ## 命令总览
 
@@ -68,15 +78,17 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 工具集：`pmem_add`（带证据写入）、`pmem_query`（检索）、`pmem_inject`（预算注入）、`pmem_stale`（失效扫描）、`pmem_check`（断言）、`pmem_show`、`pmem_roi`。
 
-**会话启动注入**（以 Claude Code hooks 为例，加进 settings.json）：
+**会话启动自动注入**（以 Claude Code hooks 为例，加进 settings.json；或直接跑 `pmem setup` 让它帮你生成）：
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node /path/to/pmem.js inject --budget 1500" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node /path/to/pmem.js hook session-start" }] }]
   }
 }
 ```
+
+`pmem hook session-start` 一段输出做完三件事：静默失效扫描（git 驱动）→ 静默断言检查 → 按 1500 token 预算注入记忆，末尾附提醒行。
 
 **CI 卡口**：`pmem check` 退出码非 0 即失败——决策被违反或记忆过期，构建直接红。
 
@@ -107,7 +119,7 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 - ✅ **P0**：单文件 CLI + JSONL 事件日志 + 证据链 + 中文检索
 - ✅ **P1**：git 依赖失效扫描 + 断言 + 预算注入 + MCP stdio server
-- 🔶 **P2**（部分完成）：命中率遥测与 ROI 账本已上线；会话转录自动抓取（hooks 深度集成）进行中
+- 🔶 **P2**（大半完成）：命中率遥测、ROI 账本、SessionStart 自动注入钩子（`hook session-start`）、agent 自动记忆约定、一键安装（`setup` / `install.cmd`）已上线；会话转录自动摘要抓取进行中
 - ⬜ **P3**：本地向量检索（openvino/MiniLM）、LLM 记忆润色（可选层）、4 层记忆分层
 
 ## 开发

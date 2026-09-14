@@ -10,10 +10,11 @@
  */
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DIR = '.pmem';
 const INDEX = 'index.json';
 const EVENTS = 'events.jsonl';
@@ -638,6 +639,127 @@ function startMcp() {
   process.stderr.write(`[projectmem] MCP server v${VERSION} ready on stdio, project=${cwd()}\n`);
 }
 
+/* ---------------- setup：一键安装 ---------------- */
+const isWin = () => process.platform === 'win32';
+
+function installDir() {
+  return isWin() ? path.join(os.homedir(), 'bin') : path.join(os.homedir(), '.local', 'bin');
+}
+
+function agentInstructionsBlock() {
+  return [
+    '## projectmem 使用约定（项目记忆）',
+    '- 会话开始：先调用 MCP 工具 pmem_inject（或运行 `pmem hook session-start`）读取本项目记忆，再开始干活。',
+    '- 出现以下情况必须调用 pmem_add 记一条（type 选 decision/progress/pitfall/preference/fact）：',
+    '  1) 用户做出技术决策或明确表达偏好；2) 关键功能完成或里程碑；3) 踩坑与解法；',
+    '  4) 约束性约定。记忆尽量带 files（相关文件，便于将来自动判失效）；决策类尽量带 assert 断言。',
+    '- 干活中若可能推翻旧决策，先 pmem_query 相关关键词核对记忆，别凭印象。',
+    '- 结束前：调用 pmem_stale；变旧记忆若内容仍准确 → pmem fresh，已过时 → pmem archive 或更新后 fresh。',
+    '- 禁止编造记忆、禁止跳过证据链、禁止把密钥/密码写进记忆。',
+  ].join('\n');
+}
+
+async function cmdSetup(argv) {
+  const yes = argv.includes('--yes');
+  const isTTY = process.stdin.isTTY;
+  const rl = isTTY ? readline.createInterface({ input: process.stdin, terminal: true }) : null;
+  const ask = (q) => new Promise((res) => {
+    if (!rl) return res(false); // 非 TTY（脚本/管道）一律不自动改第三方配置
+    rl.question(q + ' [y/N] ', (a) => res(/^y/i.test(a.trim())));
+  });
+  try {
+    const dir = installDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const nodeExe = process.execPath; // 用当前正在跑的 node，不猜路径
+    // 1) 程序本体 + 双格式垫片
+    fs.copyFileSync(__filename, path.join(dir, 'pmem.js'));
+    if (isWin()) {
+      const cmd = `@echo off\r\nchcp 65001 >nul\r\n"${nodeExe}" "${path.join(dir, 'pmem.js')}" %*\r\n`;
+      fs.writeFileSync(path.join(dir, 'pmem.cmd'), cmd, 'utf8');
+    }
+    const shPath = path.join(dir, 'pmem');
+    fs.writeFileSync(shPath, `#!/bin/sh\nexec "${nodeExe.split(path.sep).join('/')}" "${dir.split(path.sep).join('/')}/pmem.js" "$@"\n`, 'utf8');
+    try { fs.chmodSync(shPath, 0o755); } catch {}
+    console.log(`✓ 已安装到 ${dir}（pmem.js + ${isWin() ? 'pmem.cmd + ' : ''}pmem 垫片，node = ${nodeExe}）`);
+    // 2) Windows 用户 PATH
+    if (isWin() && !process.env.PMEM_NO_PATH) {
+      const q = spawnSync('reg', ['query', 'HKCU\\Environment', '/v', 'Path'], { encoding: 'utf8' });
+      let cur = null, type = 'REG_EXPAND_SZ';
+      if (q.status === 0) {
+        const m = q.stdout.match(/Path\s+(REG_[A-Z_]+)\s+(.*)\r?\n/);
+        if (m) { type = m[1]; cur = m[2]; }
+      }
+      const exists = cur && cur.split(';').some((p) => p.trim().toLowerCase() === dir.toLowerCase());
+      if (!exists) {
+        const newVal = cur ? cur.replace(/[;\s]+$/, '') + ';' + dir : dir;
+        const r = spawnSync('reg', ['add', 'HKCU\\Environment', '/v', 'Path', '/t', type, '/d', newVal, '/f'], { encoding: 'utf8' });
+        if (r.status !== 0) die('写用户 PATH 失败（可手动把 ' + dir + ' 加入 PATH）：' + (r.stderr || '').trim());
+        console.log(`✓ 用户 PATH 已追加 ${dir}（原值已保留，撤销=把该段从 PATH 删掉）`);
+      } else console.log(`✓ 用户 PATH 已包含 ${dir}`);
+    }
+    // 3) MCP / hooks：只对真实存在的目标动手，否则给可粘贴配置
+    const has = (c) => spawnSync(isWin() ? 'where' : 'which', [c], { encoding: 'utf8' }).status === 0;
+    const mcpJson = JSON.stringify({ projectmem: { command: nodeExe, args: [path.join(dir, 'pmem.js'), 'mcp'] } }, null, 2);
+    if (has('claude')) {
+      if (yes || await ask('检测到 claude CLI，自动注册 projectmem MCP（claude mcp add）？')) {
+        const r = spawnSync('claude', ['mcp', 'add', 'projectmem', '--scope', 'user', '--', nodeExe, path.join(dir, 'pmem.js'), 'mcp'], { encoding: 'utf8', shell: isWin() });
+        console.log(r.status === 0 ? '✓ Claude Code MCP 已注册' : 'claude mcp add 失败，请手动执行：\n  claude mcp add projectmem --scope user -- "' + nodeExe + '" "' + path.join(dir, 'pmem.js') + '" mcp');
+      }
+    } else {
+      console.log('\n【MCP 接入（有什么 agent 就配什么）】\n  Claude Code CLI：claude mcp add projectmem --scope user -- "' + nodeExe + '" "' + path.join(dir, 'pmem.js') + '" mcp');
+      console.log('  通用 mcpServers 配置：\n' + mcpJson);
+    }
+    if (fs.existsSync(path.join(os.homedir(), '.claude'))) {
+      if (yes || await ask('自动给 Claude Code 配置 SessionStart 钩子（会改其 settings.json，先备份）？')) {
+        const p = path.join(os.homedir(), '.claude', 'settings.json');
+        const backup = p + '.bak-' + Date.now();
+        let cfg = {};
+        if (fs.existsSync(p)) { fs.copyFileSync(p, backup); cfg = JSON.parse(fs.readFileSync(p, 'utf8')); }
+        cfg.hooks = cfg.hooks || {};
+        cfg.hooks.SessionStart = cfg.hooks.SessionStart || [];
+        cfg.hooks.SessionStart.push({ hooks: [{ type: 'command', command: `"${nodeExe}" "${path.join(dir, 'pmem.js')}" hook session-start` }] });
+        fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
+        console.log('✓ SessionStart 钩子已写入（原文件备份为 ' + backup + '）');
+      }
+    } else {
+      console.log('\n【SessionStart 自动注入钩子（可选，粘贴进 agent 的 settings.json）】');
+      console.log(JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `"${nodeExe}" "${path.join(dir, 'pmem.js')}" hook session-start` }] }] } }, null, 2));
+    }
+    console.log('\n【agent 自动记忆约定（可选，粘贴进 CLAUDE.md / AGENTS.md，agent 就会自动记/自动查）】');
+    console.log(agentInstructionsBlock());
+    console.log(`\n完成。新开一个终端，进任意项目目录运行：pmem init && pmem roi  验证。`);
+  } finally { if (rl) rl.close(); }
+}
+
+/* ---------------- hook：给 agent 钩子用的静默入口 ---------------- */
+function cmdHook(args) {
+  if (args[0] !== 'session-start') die('目前只支持：pmem hook session-start');
+  ensureStorage();
+  const idx = readIndex();
+  let staleNow = 0;
+  for (const e of idx.entries) {
+    if (e.status === 'archived') continue;
+    const r = checkFreshness(e);
+    if (r.stale) {
+      if (e.status !== 'stale') { appendEvent({ e: 'stale', id: e.id, reasons: r.reasons, via: 'hook' }); staleNow++; }
+      e.status = 'stale';
+      e.staleReasons = r.reasons;
+    }
+  }
+  const assertFails = idx.entries.filter((e) => e.assert && e.status !== 'archived' && !runAssert(e.assert).pass);
+  if (idx.entries.some((e) => e.status === 'stale')) writeIndex(idx);
+  render();
+  cmdInject(['--budget', '1500']);
+  if (staleNow || assertFails.length) {
+    console.log(`⚠️ 注意：${staleNow} 条记忆刚被检测到变旧，${assertFails.length} 条断言未过——干完活运行 pmem stale / pmem check 处理。`);
+  }
+}
+
+/* ---------------- agent-instructions：打印可粘贴的 agent 使用约定 ---------------- */
+function cmdAgentInstructions() {
+  console.log(agentInstructionsBlock());
+}
+
 /* ---------------- 入口 ---------------- */
 const HELP = `projectmem (pmem) v${VERSION} — 零依赖的"项目记忆编译器"
 记忆不是笔记，是编译产物：会失效、带证据、能断言、算得清收益。
@@ -661,6 +783,9 @@ const HELP = `projectmem (pmem) v${VERSION} — 零依赖的"项目记忆编译�
   render                        重绘 MEMORY.md（人读投影）
   log [--limit n]               看事件日志尾部
   mcp                           启动 MCP stdio server（接 Claude Code / ZCode 等）
+  setup [--yes]                 一键安装：装 pmem 命令 + 配 PATH + 打印 MCP/钩子/agent 约定配置
+  hook session-start            给 agent 钩子用：静默失效扫描 + 断言 + 注入记忆（一段输出搞定）
+  agent-instructions            打印可粘贴进 CLAUDE.md/AGENTS.md 的"agent 自动记忆约定"
 
 例：
   pmem init
@@ -689,6 +814,9 @@ function main() {
     case 'render': return cmdRender();
     case 'log': return cmdLog(rest);
     case 'mcp': return startMcp();
+    case 'setup': return cmdSetup(rest).catch((e) => die(e.message));
+    case 'hook': return cmdHook(rest);
+    case 'agent-instructions': return cmdAgentInstructions();
     case undefined:
     case 'help':
     case '--help':
