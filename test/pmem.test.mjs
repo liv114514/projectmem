@@ -187,13 +187,15 @@ test('agent-instructions：输出可粘贴约定', () => {
 
 test('setup：装垫片到隔离 HOME（不动注册表）', () => {
   const tmp = mktmp();
-  fs.mkdirSync(path.join(tmp, 'home'), { recursive: true });
-  const env = { ...process.env, PMEM_NO_PATH: '1', USERPROFILE: path.join(tmp, 'home'), HOME: path.join(tmp, 'home') };
+  const home = path.join(tmp, 'home');
+  const bin = path.join(home, 'bin');
+  fs.mkdirSync(home, { recursive: true });
+  // PMEM_HOME 显式指定安装目录：不依赖 homedir 在 CI 上的推导差异（Windows runner 偶发翻车点）
+  const env = { ...process.env, PMEM_NO_PATH: '1', PMEM_HOME: bin, USERPROFILE: home, HOME: home };
   const r = spawnSync(process.execPath, [PMEM, 'setup', '--yes'], { encoding: 'utf8', env });
   assert.equal(r.status, 0, 'setup 应成功: ' + r.stdout + r.stderr);
-  const isWin = process.platform.startsWith('win');
-  const bin = path.join(tmp, 'home', isWin ? 'bin' : '.local', 'bin'); // installDir() 的平台差异
   assert.ok(existsSync(path.join(bin, 'pmem.js')), 'pmem.js 应复制到位');
+  const isWin = process.platform.startsWith('win');
   if (isWin) {
     const shim = readFileSync(path.join(bin, 'pmem.cmd'), 'utf8');
     assert.ok(shim.includes('pmem.js'), 'cmd 垫片应指向安装目录');

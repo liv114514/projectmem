@@ -149,7 +149,7 @@ function appendEvent(ev) {
 
 /* ---------------- 并发锁：MCP server 常驻 + CLI 临时进程并发写的竞态防护 ---------------- */
 const LOCK_FILE = 'index.lock';
-const LOCK_RETRIES = 3;
+const LOCK_RETRIES = 8; // Windows runner 进程启动慢，3 次实测不够
 
 function acquireLock() {
   const target = dirPath(LOCK_FILE);
@@ -167,9 +167,9 @@ function acquireLock() {
         }
       } catch { /* 锁文件不可读：按占用处理走重试 */ }
       if (attempt >= LOCK_RETRIES) {
-        die(`获取写入锁失败（${target}）。若有其他 pmem 进程在跑请等它结束；确认无并发后删除该锁文件重试。`);
+        throw new Error(`获取写入锁失败（${target}）。若有其他 pmem 进程在跑请等它结束；确认无并发后删除该锁文件重试。`);
       }
-      const wait = 50 + Math.floor(Math.random() * 100);
+      const wait = 50 + attempt * 25 + Math.floor(Math.random() * 75); // 递增退避，最坏约 1.5s
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait); // 同步休眠，零依赖
     }
   }
@@ -881,6 +881,8 @@ function startMcp() {
 const isWin = () => process.platform === 'win32';
 
 function installDir() {
+  const override = process.env.PMEM_HOME; // 显式指定安装目录（测试/便携场景），绕开 homedir 推导差异
+  if (override) return path.resolve(override);
   return isWin() ? path.join(os.homedir(), 'bin') : path.join(os.homedir(), '.local', 'bin');
 }
 
@@ -1199,4 +1201,9 @@ function main() {
   }
 }
 
-main();
+try {
+  main();
+} catch (e) {
+  // 锁获取失败等运行时错误：CLI 侧友好报错；MCP 路径有自己的 catch → isError，不会走到这
+  die(e.message);
+}
