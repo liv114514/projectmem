@@ -2,7 +2,7 @@
 
 **[中文](README.md) | [English](README.en.md)**
 
-<!-- CI 徽章待 workflow scope 授权后启用（见 docs/ci-workflow.pending.yml） -->
+[![CI](https://github.com/liv114514/projectmem/actions/workflows/ci.yml/badge.svg)](https://github.com/liv114514/projectmem/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Node](https://img.shields.io/node/v/projectmem)
 
@@ -122,7 +122,7 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 ## 与现成项目对比
 
-| 维度 | agentmemory (28.4k★) | claude-mem (46k+★) | projectmem |
+| 维度 | agentmemory (29.2k★) | claude-mem (98k★) | projectmem |
 |---|---|---|---|
 | 依赖 | 固定版本 iii 引擎二进制 | Bun + uv + Chroma | **0** |
 | 原生 Windows | 需手动装引擎，推荐 WSL2 | 安装链长 | **一等公民** |
@@ -130,6 +130,8 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 | 记忆出处 | 无 | 无 | **commit/文件收据** |
 | 效果度量 | 无 | 无 | **命中率 + ROI 账本** |
 | 抓取成本 | LLM 压缩 | LLM 压缩 | **0 token（规则抽取）** |
+
+> 竞品 star 数截至 2026-10-09（GitHub API 实查）。
 
 ## 路线图
 

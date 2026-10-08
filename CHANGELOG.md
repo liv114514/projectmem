@@ -2,6 +2,23 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。
 
+## [1.3.0] - 2026-10-09
+
+### 并发与性能（P0）
+- **写入并发锁**：MCP server 常驻 + CLI 临时进程并发写索引不再互相覆盖（`index.lock` 独占创建 + 抖动重试 + 陈旧锁自愈，finally 保证释放）
+- **事件日志 O(1) 摊销**：appendEvent 不再全量重读 events.jsonl 取尾哈希，改为尾部扩窗读取 + 进程内缓存
+- **修复：日志 <4KB 时尾哈希读取跳过导致哈希链断裂**（v1.2 遗留，security verify 可复现）
+
+### 安全（P1）
+- **脱敏误伤修复**：credential_assign 值做熵二次校验（短值/低熵/纯数字保留原文），key 含 budget/limit/timeout 等排除词跳过；宁漏存不泄密原则不变
+- **MCP 坏断言不再杀 server**：parseAssert 改为抛错，CLI 层自行 die；坏 type/坏 assert 返回带正确示例的 isError 文案，坏 files 降级并提示
+
+### 工程与可信度（P1）
+- **CI 正式启用**：`.github/workflows/ci.yml`（Node 20/22 × ubuntu/windows 矩阵），README 加 CI 徽章
+- README 竞品 star 数据更新并注明日期（agentmemory 29.2k★ / claude-mem 98k★，截至 2026-10-09 GitHub API 实查）
+- keywords 优化（移除「中文」，补 agent-memory / context-management）
+- 新增 4 个回归测试：并发不丢条目、小文件哈希链、脱敏熵校验、MCP 参数校验
+
 ## [1.2.0] - 2026-09-14
 
 ### 安全模块

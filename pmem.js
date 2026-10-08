@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const DIR = '.pmem';
 const INDEX = 'index.json';
 const EVENTS = 'events.jsonl';
@@ -110,19 +110,80 @@ function writeIndex(idx) {
   fs.renameSync(tmp, target); // 原子写，防中途崩溃损坏索引
 }
 
+// 尾哈希缓存：避免每追加一条事件都全量重读 events.jsonl（O(n²) → O(1) 摊销）
+let _tailHash = null; // null=未初始化；''=无记录；否则为最后一条事件的 h
+function readTailHash() {
+  if (_tailHash !== null) return _tailHash;
+  _tailHash = '';
+  let fd = null;
+  try {
+    fd = fs.openSync(dirPath(EVENTS), 'r');
+    const size = fs.fstatSync(fd).size;
+    // 从尾部按块扩窗找最后一行可解析 JSON（事件行带完整正文可能超 1KB）
+    for (let win = 4096; ; win = Math.min(win * 4, size)) {
+      const w = Math.min(win, size);
+      const buf = Buffer.alloc(w);
+      fs.readSync(fd, buf, 0, w, size - w);
+      const lines = buf.toString('utf8').split('\n').filter((l) => l.trim());
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const h = JSON.parse(lines[i]).h;
+          if (typeof h === 'string') { _tailHash = h; break; }
+        } catch { continue; } // 尾部截断的残行，往前行找
+      }
+      if (w >= size || _tailHash !== '') break;
+    }
+  } catch { /* 文件不存在 → 空链 */ }
+  finally { if (fd !== null) { try { fs.closeSync(fd); } catch {} } }
+  return _tailHash;
+}
+
 function appendEvent(ev) {
   // 完整性哈希链：h = sha256(上一条h | 本条内容)，篡改历史会在 verify 时现形
-  const file = dirPath(EVENTS);
-  let prev = '';
-  if (fs.existsSync(file)) {
-    const lines = fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim());
-    if (lines.length) {
-      try { prev = JSON.parse(lines[lines.length - 1]).h || ''; } catch { prev = ''; }
-    }
-  }
+  const prev = readTailHash();
   const body = Object.assign({ ts: nowIso() }, ev);
   const h = crypto.createHash('sha256').update(prev + '|' + JSON.stringify(body)).digest('hex').slice(0, 16);
-  fs.appendFileSync(file, JSON.stringify(Object.assign(body, { h })) + '\n', 'utf8');
+  fs.appendFileSync(dirPath(EVENTS), JSON.stringify(Object.assign(body, { h })) + '\n', 'utf8');
+  _tailHash = h; // 缓存推进，下次追加不再读文件
+}
+
+/* ---------------- 并发锁：MCP server 常驻 + CLI 临时进程并发写的竞态防护 ---------------- */
+const LOCK_FILE = 'index.lock';
+const LOCK_RETRIES = 3;
+
+function acquireLock() {
+  const target = dirPath(LOCK_FILE);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.writeFileSync(target, String(process.pid), { flag: 'wx' }); // 独占创建，已存在即抛 EEXIST
+      return target;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // 陈旧锁自愈：持有进程已死则清除重试
+      try {
+        const pid = parseInt(fs.readFileSync(target, 'utf8'), 10);
+        if (pid && pid !== process.pid) {
+          try { process.kill(pid, 0); } catch (err) { if (err.code === 'ESRCH') { try { fs.unlinkSync(target); } catch {} continue; } }
+        }
+      } catch { /* 锁文件不可读：按占用处理走重试 */ }
+      if (attempt >= LOCK_RETRIES) {
+        die(`获取写入锁失败（${target}）。若有其他 pmem 进程在跑请等它结束；确认无并发后删除该锁文件重试。`);
+      }
+      const wait = 50 + Math.floor(Math.random() * 100);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait); // 同步休眠，零依赖
+    }
+  }
+}
+
+function releaseLock(target) {
+  if (!target) return;
+  try { fs.unlinkSync(target); } catch { /* 已被清走也无妨 */ }
+}
+
+// 写路径统一入口：拿锁 → 执行 → 释放。fn 抛错同样保证释放。
+function withLock(fn) {
+  const lock = acquireLock();
+  try { return fn(); } finally { releaseLock(lock); }
 }
 
 /* ---------------- 安全模块：密钥脱敏 / 注入检测 / 路径围栏 ---------------- */
@@ -140,11 +201,33 @@ const SECRET_RULES = [
 ];
 const INJECTION_RE = /(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\s+(?:instructions|prompts|rules)|system\s*prompt|you\s+must\s+now\s+obey/i;
 
+// credential_assign 值的二次校验：低熵值（数字、短语、普通配置）不是密钥，不脱敏
+const CRED_KEY_EXCLUDE = /(?:budget|quota|limit|count|timeout|port|size|seconds|minutes|retries|version)/i;
+const LOW_ENTROPY_VALUE = /^[a-z0-9]+(?:[-_.][a-z0-9]+)*$|^\d+(?:[.,]\d+)*$/;
+function credentialValueLooksSecret(rawVal) {
+  const v = rawVal.replace(/^["'\s]+/, '').replace(/[\s"']+$/, '');
+  if (v.length < 16) return false;                    // 短值不可能是可用凭据
+  if (LOW_ENTROPY_VALUE.test(v)) return false;        // 纯小写/数字/常见分隔符组合
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter((re) => re.test(v)).length;
+  return classes >= 2 || v.length >= 24;              // 混合字符类，或足够长的随机串
+}
+
 function redactSecrets(text) {
   let out = String(text);
   const hits = [];
   for (const r of SECRET_RULES) {
-    out = out.replace(r.re, () => { hits.push(r.type); return `[REDACTED:${r.type}]`; });
+    out = out.replace(r.re, (m) => {
+      if (r.type === 'credential_assign') {
+        // 误伤防护：key 带排除词（budget/limit 等）或值低熵 → 保留原文
+        const splitAt = m.search(/[:=]/);
+        const key = splitAt >= 0 ? m.slice(0, splitAt) : m;
+        const val = splitAt >= 0 ? m.slice(splitAt + 1) : '';
+        if (CRED_KEY_EXCLUDE.test(key)) return m;
+        if (!credentialValueLooksSecret(val)) return m;
+      }
+      hits.push(r.type);
+      return `[REDACTED:${r.type}]`;
+    });
   }
   return { text: out, hits };
 }
@@ -227,17 +310,18 @@ function findEntry(idx, id) {
 }
 
 function parseAssert(s) {
+  // 抛错而非 die：MCP server 里 process.exit 会杀掉整个 server，由调用方决定如何呈现
   if (s === 'no-deps') return { kind: 'no-deps' };
   const i = s.indexOf(':');
-  if (i < 0) die(`断言格式不认识：${s}（支持 no-deps | has-file:<路径> | no-file:<路径> | contains:<路径>:<内容>）`);
+  if (i < 0) throw new Error(`断言格式不认识：${s}（支持 no-deps | has-file:<路径> | no-file:<路径> | contains:<路径>:<内容>）`);
   const kind = s.slice(0, i), rest = s.slice(i + 1);
   if (kind === 'has-file' || kind === 'no-file') return { kind, file: rest };
   if (kind === 'contains') {
     const j = rest.indexOf(':');
-    if (j < 0) die('contains 断言格式：contains:<文件路径>:<包含的内容>');
+    if (j < 0) throw new Error('contains 断言格式：contains:<文件路径>:<包含的内容>');
     return { kind: 'contains', file: rest.slice(0, j), pattern: rest.slice(j + 1) };
   }
-  die(`断言格式不认识：${s}`);
+  throw new Error(`断言格式不认识：${s}`);
 }
 
 function runAssert(a) {
@@ -382,7 +466,7 @@ function parseAddArgs(args) {
     const a = args[i];
     if (a === '--file') opts.files.push(args[++i]);
     else if (a === '--tag') opts.tags.push(args[++i]);
-    else if (a === '--assert') opts.asserts.push(parseAssert(args[++i]));
+    else if (a === '--assert') { try { opts.asserts.push(parseAssert(args[++i])); } catch (e) { die(e.message); } }
     else if (!type) type = a;
     else opts.text.push(a);
   }
@@ -390,6 +474,10 @@ function parseAddArgs(args) {
 }
 
 function cmdAdd(argv, forcedType) {
+  withLock(() => cmdAddLocked(argv, forcedType));
+}
+
+function cmdAddLocked(argv, forcedType) {
   ensureStorage();
   const { type, files, tags, asserts, text } = forcedType
     ? { type: forcedType, files: [], tags: [], asserts: [], text: argv }
@@ -458,51 +546,59 @@ function cmdQuery(argv) {
   }
   const kw = rest.join(' ').trim();
   if (!kw) die('用法：pmem query <关键词>（可多个，空格分隔；--limit n 调条数）');
-  const idx = readIndex();
-  const hits = scoreEntries(idx, tokenize(kw), limit);
-  if (!hits.length) return console.log(`没有命中 "${kw}"。试更短的关键词，或 pmem list 全量看。`);
-  console.log(`查询 "${kw}" · 命中 ${hits.length} 条：`);
-  hits.forEach(({ e, s }, i) => {
-    console.log(`${i + 1}. ${entryLine(e, `(相关度 ${s.toFixed(2)}) `)}\n`);
+  withLock(() => {
+    const idx = readIndex();
+    const hits = scoreEntries(idx, tokenize(kw), limit);
+    if (!hits.length) { console.log(`没有命中 "${kw}"。试更短的关键词，或 pmem list 全量看。`); return; }
+    console.log(`查询 "${kw}" · 命中 ${hits.length} 条：`);
+    hits.forEach(({ e, s }, i) => {
+      console.log(`${i + 1}. ${entryLine(e, `(相关度 ${s.toFixed(2)}) `)}\n`);
+    });
+    hits.forEach(({ e }) => bumpStat(idx, e.id, 'queryHits'));
+    writeIndex(idx); // 命中计入效用账本
   });
-  hits.forEach(({ e }) => bumpStat(idx, e.id, 'queryHits'));
-  writeIndex(idx); // 命中计入效用账本
 }
 
 function cmdStale() {
   ensureStorage();
-  const idx = readIndex();
-  const s = scanFreshness(idx, 'cli');
-  render();
-  console.log(`失效扫描完成：检查 ${s.checked} 条（有文件依赖的才查）`);
-  console.log(`  本轮变旧 ${s.newly} 条 · 维持变旧 ${s.still} 条 · 恢复/正常 ${s.ok} 条`);
-  idx.entries.filter((e) => e.status === 'stale').forEach((e) =>
-    console.log(`  ⚠️ [${e.id}] ${e.staleReasons.join('；')}\n      → ${e.text.slice(0, 40)}${e.text.length > 40 ? '…' : ''}\n      → 核实后执行 pmem fresh ${e.id}`));
-  if (s.newly + s.still === 0) console.log('  所有依赖过的记忆都还是新鲜的。');
+  withLock(() => {
+    const idx = readIndex();
+    const s = scanFreshness(idx, 'cli');
+    render();
+    console.log(`失效扫描完成：检查 ${s.checked} 条（有文件依赖的才查）`);
+    console.log(`  本轮变旧 ${s.newly} 条 · 维持变旧 ${s.still} 条 · 恢复/正常 ${s.ok} 条`);
+    idx.entries.filter((e) => e.status === 'stale').forEach((e) =>
+      console.log(`  ⚠️ [${e.id}] ${e.staleReasons.join('；')}\n      → ${e.text.slice(0, 40)}${e.text.length > 40 ? '…' : ''}\n      → 核实后执行 pmem fresh ${e.id}`));
+    if (s.newly + s.still === 0) console.log('  所有依赖过的记忆都还是新鲜的。');
+  });
 }
 
 function cmdFresh([id]) {
   ensureStorage();
-  const idx = readIndex();
-  const e = findEntry(idx, id);
-  e.status = 'active';
-  e.staleReasons = [];
-  e.verifiedAt = nowIso();
-  writeIndex(idx);
-  appendEvent({ e: 'fresh', id, reason: '人工复核' });
-  render();
-  console.log(`[${id}] 已重新核实，失效基线更新到现在。`);
+  withLock(() => {
+    const idx = readIndex();
+    const e = findEntry(idx, id);
+    e.status = 'active';
+    e.staleReasons = [];
+    e.verifiedAt = nowIso();
+    writeIndex(idx);
+    appendEvent({ e: 'fresh', id, reason: '人工复核' });
+    render();
+    console.log(`[${id}] 已重新核实，失效基线更新到现在。`);
+  });
 }
 
 function cmdArchive([id]) {
   ensureStorage();
-  const idx = readIndex();
-  const e = findEntry(idx, id);
-  e.status = 'archived';
-  writeIndex(idx);
-  appendEvent({ e: 'archive', id });
-  render();
-  console.log(`[${id}] 已归档（不再参与检索与注入，事件日志保留）。`);
+  withLock(() => {
+    const idx = readIndex();
+    const e = findEntry(idx, id);
+    e.status = 'archived';
+    writeIndex(idx);
+    appendEvent({ e: 'archive', id });
+    render();
+    console.log(`[${id}] 已归档（不再参与检索与注入，事件日志保留）。`);
+  });
 }
 
 function cmdCheck() {
@@ -526,6 +622,10 @@ function cmdCheck() {
 }
 
 function cmdInject(argv) {
+  withLock(() => cmdInjectLocked(argv));
+}
+
+function cmdInjectLocked(argv) {
   ensureStorage();
   let budget = 1500;
   const bi = argv.indexOf('--budget');
@@ -672,34 +772,54 @@ function mcpDispatch(name, args) {
   };
   switch (name) {
     case 'pmem_add': {
-      const idx = readIndex();
-      const red = applyRedaction(String(args.text || ''), args.tags || [], '');
-      const entry = {
-        id: nextId(idx),
-        type: TYPES[args.type] ? args.type : 'note',
-        text: red.text,
-        tags: red.tags,
-        deps: (args.files || []).map((f) => depRel(f)),
-        evidence: { commit: currentCommit(), files: [] },
-        assert: args.assert ? parseAssert(String(args.assert)) : null,
-        status: 'active', staleReasons: [],
-        createdAt: nowIso(), verifiedAt: nowIso(),
-        stats: { queryHits: 0, injections: 0, lastInjectedAt: null },
-      };
-      entry.evidence.files = entry.deps.slice();
-      idx.entries.push(entry);
-      writeIndex(idx);
-      appendEvent({ e: 'add', id: entry.id, type: entry.type, via: 'mcp', entry });
-      render();
-      return `已记录 ${entry.id}（${TYPES[entry.type].label}）：${entry.text}`;
+      const types = Object.keys(TYPES).join('/');
+      if (typeof args.type !== 'string' || !TYPES[args.type]) {
+        throw new Error(`type 必须是 ${types} 之一（收到：${JSON.stringify(args.type)}）。修正后重试。`);
+      }
+      let files = [];
+      let filesNote = '';
+      if (Array.isArray(args.files)) files = args.files.map(String);
+      else if (args.files != null) filesNote = '（提示：files 须为字符串数组，本次已忽略非法值）';
+      let asserts = [];
+      if (args.assert != null) {
+        try { asserts = [parseAssert(String(args.assert))]; }
+        catch (e) {
+          throw new Error(`assert 格式错误：${e.message}。正确示例：no-deps | has-file:package.json | no-file:dist/bundle.js | contains:README.md:零依赖`);
+        }
+      }
+      return withLock(() => {
+        const idx = readIndex();
+        const red = applyRedaction(String(args.text || ''), Array.isArray(args.tags) ? args.tags.map(String) : [], '');
+        const entry = {
+          id: nextId(idx),
+          type: args.type,
+          text: red.text,
+          tags: red.tags,
+          deps: [],
+          evidence: { commit: currentCommit(), files: [] },
+          assert: asserts[0] || null,
+          status: 'active', staleReasons: [],
+          createdAt: nowIso(), verifiedAt: nowIso(),
+          stats: { queryHits: 0, injections: 0, lastInjectedAt: null },
+        };
+        try { entry.deps = [...new Set(files.map((f) => depRel(f)))]; } catch (e) { throw new Error(e.message); }
+        entry.evidence.files = entry.deps.slice();
+        idx.entries.push(entry);
+        writeIndex(idx);
+        appendEvent({ e: 'add', id: entry.id, type: entry.type, via: 'mcp', entry });
+        render();
+        return `已记录 ${entry.id}（${TYPES[entry.type].label}）：${entry.text}${filesNote}`;
+      });
     }
     case 'pmem_query': {
-      const idx = readIndex();
-      const hits = scoreEntries(idx, tokenize(String(args.keywords || '')), args.limit || 8);
-      hits.forEach(({ e }) => bumpStat(idx, e.id, 'queryHits'));
-      writeIndex(idx);
-      if (!hits.length) return `没有命中 "${args.keywords}"`;
-      return hits.map(({ e }, i) => `${i + 1}. [${e.id}]${e.status === 'stale' ? '⚠️' : ''}${TYPES[e.type].label} ${e.text}${e.deps.length ? '（证据:' + e.deps.join(',') + '）' : ''}`).join('\n');
+      return withLock(() => {
+        const idx = readIndex();
+        const hits = scoreEntries(idx, tokenize(String(args.keywords || '')), args.limit || 8);
+        hits.forEach(({ e }) => bumpStat(idx, e.id, 'queryHits'));
+        writeIndex(idx);
+        if (!hits.length) return `没有命中 "${args.keywords}"`;
+        return hits.map(({ e }, i) => `${i + 1}. [${e.id}]${e.status === 'stale' ? '⚠️' : ''}${TYPES[e.type].label} ${e.text}${e.deps.length ? '（证据:' + e.deps.join(',') + '）' : ''}`).join('\n');
+      });
     }
     case 'pmem_inject': return capture(() => cmdInject(['--budget', String(args.budget || 1500)]));
     case 'pmem_stale': return capture(() => cmdStale());
@@ -854,14 +974,16 @@ async function cmdSetup(argv) {
 function cmdHook(args) {
   if (args[0] !== 'session-start') die('目前只支持：pmem hook session-start');
   if (!hasStorage()) return; // 无存储的项目静默退出：不制造 .pmem，不污染会话上下文
-  const idx = readIndex();
-  const s = scanFreshness(idx, 'hook');
-  render();
-  cmdInject(['--budget', '1500']);
-  const assertFails = idx.entries.filter((e) => e.assert && e.status !== 'archived' && !runAssert(e.assert).pass);
-  if (s.newly || assertFails.length) {
-    console.log(`⚠️ 注意：${s.newly} 条记忆刚被检测到变旧，${assertFails.length} 条断言未过——干完活运行 pmem stale / pmem check 处理。`);
-  }
+  withLock(() => {
+    const idx = readIndex();
+    const s = scanFreshness(idx, 'hook');
+    render();
+    cmdInjectLocked(['--budget', '1500']);
+    const assertFails = idx.entries.filter((e) => e.assert && e.status !== 'archived' && !runAssert(e.assert).pass);
+    if (s.newly || assertFails.length) {
+      console.log(`⚠️ 注意：${s.newly} 条记忆刚被检测到变旧，${assertFails.length} 条断言未过——干完活运行 pmem stale / pmem check 处理。`);
+    }
+  });
 }
 
 /* ---------------- agent-instructions：打印可粘贴的 agent 使用约定 ---------------- */
@@ -877,7 +999,7 @@ function cmdSecurity(args) {
   }
   if (needStorageHint('做安全检查')) return;
   if (sub === 'verify') return securityVerify();
-  return securityScan(args.includes('--fix'));
+  return withLock(() => securityScan(args.includes('--fix')));
 }
 
 function securityVerify() {

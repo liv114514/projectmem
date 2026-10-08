@@ -314,3 +314,71 @@ test('MCP stdio server 往返', async () => {
   assert.ok(msgs[2].result.content[0].text.includes('m001'));
   assert.ok(msgs[3].result.content[0].text.includes('m001'), 'query 应命中刚写入的条目');
 });
+
+/* ---------------- v1.3.0 回归：并发锁 / 哈希链 / 脱敏熵校验 / MCP 参数校验 ---------------- */
+
+test('v1.3 并发 add：多进程同时写不丢条目且哈希链连续', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  // 同时起 6 个并发进程，修复前互相覆盖索引会丢条目
+  const procs = [];
+  for (let i = 0; i < 6; i++) {
+    procs.push(spawn(process.execPath, [PMEM, 'add', 'fact', `并发条目 ${i} 正文`], { cwd: tmp }));
+  }
+  return new Promise((resolve) => {
+    let done = 0;
+    for (const p of procs) p.on('exit', () => { if (++done === procs.length) resolve(); });
+  }).then(() => {
+    const r = run(['list', '--limit', '99'], tmp);
+    const count = (r.stdout.match(/^\[m/gm) || []).length;
+    assert.equal(count, 6, `并发后应有 6 条，实际 ${count}`);
+    const v = run(['security', 'verify'], tmp);
+    assert.ok(v.stdout.includes('✅'), '并发写入后哈希链应完整');
+    assert.ok(!fs.existsSync(path.join(tmp, '.pmem', 'index.lock')), '锁文件应释放');
+  });
+});
+
+test('v1.3 哈希链小文件回归：日志 <4KB 时 append 也连续', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  for (let i = 0; i < 3; i++) run(['add', 'fact', `小文件链测试 ${i}`], tmp);
+  const v = run(['security', 'verify'], tmp);
+  assert.ok(v.stdout.includes('3 条事件哈希链连续'), v.stdout);
+});
+
+test('v1.3 脱敏熵校验：低熵赋值保留，高熵凭据替换', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  run(['add', 'note', '低熵配置 timeout budget: 1500 与 password: lowentropy12345 保留'], tmp);
+  run(['add', 'note', '高熵凭据 password: Ab12Cd34Ef56Gh78 应替换'], tmp);
+  const r = run(['list', '--limit', '9'], tmp);
+  assert.ok(r.stdout.includes('password: lowentropy12345'), '低熵值不应脱敏');
+  assert.ok(!r.stdout.includes('Ab12Cd34Ef56Gh78'), '高熵凭据必须脱敏');
+  assert.ok(r.stdout.includes('[REDACTED:credential_assign]'), '高熵凭据应有替换标记');
+});
+
+test('v1.3 MCP 参数校验：坏 type/坏 assert 报错且 server 存活，坏 files 降级', async () => {
+  const tmp = mktmp();
+  const child = spawn(process.execPath, [PMEM, 'mcp'], { cwd: tmp });
+  const rl = readline.createInterface({ input: child.stdout });
+  const msgs = [];
+  rl.on('line', (l) => { try { msgs.push(JSON.parse(l)); } catch {} });
+  const send = (obj) => child.stdin.write(JSON.stringify(obj) + '\n');
+  send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } });
+  send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pmem_add', arguments: { type: 'badtype', text: 'x' } } });
+  send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pmem_add', arguments: { type: 'fact', text: 'y', assert: 'foo:bar' } } });
+  send({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'pmem_add', arguments: { type: 'fact', text: 'z', files: 'not-an-array' } } });
+  send({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'pmem_query', arguments: { keywords: 'z' } } });
+  const t0 = Date.now();
+  await new Promise((res, rej) => {
+    const iv = setInterval(() => {
+      if (msgs.length >= 5) { clearInterval(iv); res(); }
+      else if (Date.now() - t0 > 15000) { clearInterval(iv); rej(new Error('MCP 超时，仅收到 ' + msgs.length + ' 条')); }
+    }, 50);
+  });
+  child.kill();
+  assert.ok(msgs[1].result.isError && msgs[1].result.content[0].text.includes('type 必须是'), '坏 type 应报错');
+  assert.ok(msgs[2].result.isError && msgs[2].result.content[0].text.includes('assert 格式错误'), '坏 assert 应报错且含示例');
+  assert.ok(!msgs[3].result.isError && msgs[3].result.content[0].text.includes('字符串数组'), '坏 files 应降级并提示');
+  assert.ok(!msgs[4].result.isError, 'server 应存活响应后续请求');
+});
