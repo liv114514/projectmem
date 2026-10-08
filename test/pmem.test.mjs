@@ -191,11 +191,16 @@ test('setup：装垫片到隔离 HOME（不动注册表）', () => {
   const env = { ...process.env, PMEM_NO_PATH: '1', USERPROFILE: path.join(tmp, 'home'), HOME: path.join(tmp, 'home') };
   const r = spawnSync(process.execPath, [PMEM, 'setup', '--yes'], { encoding: 'utf8', env });
   assert.equal(r.status, 0, 'setup 应成功: ' + r.stdout + r.stderr);
-  const bin = path.join(tmp, 'home', 'bin');
+  const isWin = process.platform.startsWith('win');
+  const bin = path.join(tmp, 'home', isWin ? 'bin' : '.local', 'bin'); // installDir() 的平台差异
   assert.ok(existsSync(path.join(bin, 'pmem.js')), 'pmem.js 应复制到位');
-  assert.ok(existsSync(path.join(bin, 'pmem.cmd')) || !process.platform.startsWith('win') === false, 'Windows 应有 pmem.cmd');
-  const shim = readFileSync(path.join(bin, 'pmem.cmd'), 'utf8');
-  assert.ok(shim.includes('pmem.js'), '垫片应指向安装目录');
+  if (isWin) {
+    const shim = readFileSync(path.join(bin, 'pmem.cmd'), 'utf8');
+    assert.ok(shim.includes('pmem.js'), 'cmd 垫片应指向安装目录');
+  } else {
+    const shim = readFileSync(path.join(bin, 'pmem'), 'utf8');
+    assert.ok(shim.includes('pmem.js'), 'sh 垫片应指向安装目录');
+  }
   const r2 = spawnSync(process.execPath, [path.join(bin, 'pmem.js'), 'roi'], { encoding: 'utf8', cwd: tmp });
   assert.ok(r2.stdout.includes('还没有 projectmem 存储'), '安装副本应可独立运行（无存储时给提示）');
 });
