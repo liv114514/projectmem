@@ -2,7 +2,7 @@
 
 > **[中文](README.md) | English**
 
-<!-- CI 徽章待 workflow scope 授权后启用（见 docs/ci-workflow.pending.yml） -->
+[![CI](https://github.com/liv114514/projectmem/actions/workflows/ci.yml/badge.svg)](https://github.com/liv114514/projectmem/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Node](https://img.shields.io/node/v/projectmem)
 
@@ -39,6 +39,8 @@ pmem query dependency
 
 That first memory already has the full paradigm: **evidence** (commit + file receipt), **staleness source** (touch `package.json` and it goes stale), **assertion** (anyone actually adds a dependency, `pmem check` flags it).
 
+**See it before you believe it**: `node pmem.js demo` — runs the entire loop in a temp dir (evidence-stamped writes → search → auto-staleness on file change → review & revive → assertion red card). Every scene is a real command's real output; delete the dir afterwards.
+
 **Go full-auto (2 pastes):**
 
 1. Paste `pmem agent-instructions` output into `CLAUDE.md` / `AGENTS.md` → your agent reads memory at session start, records decisions/pitfalls as it works, checks staleness when done.
@@ -62,6 +64,8 @@ claude mcp add projectmem --scope user -- node /path/to/pmem.js mcp
 | `pmem inject [--budget 1500]` | knapsack-pack top memories under a token budget |
 | `pmem roi` | ledger: tokens saved vs spent, per memory |
 | `pmem hook session-start` | silent scan + assert + inject in one block (for hooks) |
+| `pmem export` | compile memories into a compact Markdown block; `pmem export >> AGENTS.md` done |
+| `pmem demo` | run the full loop in a temp dir, 30 seconds, delete after |
 | `pmem security scan [--fix]` / `security verify` | secret redaction scan / event-log tamper detection |
 | `pmem mcp` | MCP stdio server (7 tools) |
 
@@ -88,7 +92,7 @@ Deliberately **no SQLite, no vector DB**: target scale is ≤ 2000 entries per p
 ## Roadmap
 
 - ✅ P0/P1: CLI, event log + evidence, staleness, assertions, search, MCP server
-- 🔶 P2 (mostly done): telemetry, ROI ledger, one-click setup, session-start hook, agent conventions; session-transcript auto-capture in progress
+- 🔶 P2 (mostly done): telemetry, ROI ledger, one-click setup, session-start hook, agent conventions, `demo` walkthrough, `export` to CLAUDE.md; session-transcript auto-capture in progress
 - ⬜ P3: local vector search, optional LLM polish, memory tiers
 
 Feedback: [Issues](https://github.com/liv114514/projectmem/issues) · [Discussions](https://github.com/liv114514/projectmem/discussions) · If it saves you re-explaining your project, a ⭐ is the whole marketing budget.
