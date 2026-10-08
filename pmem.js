@@ -15,7 +15,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const DIR = '.pmem';
 const INDEX = 'index.json';
 const EVENTS = 'events.jsonl';
@@ -970,6 +970,75 @@ async function cmdSetup(argv) {
   } finally { if (rl) rl.close(); }
 }
 
+/* ---------------- export：把记忆编译成可粘贴的紧凑块 ---------------- */
+function cmdExport(argv) {
+  if (needStorageHint('导出')) return;
+  const fi = argv.indexOf('--format');
+  const format = fi >= 0 ? argv[fi + 1] : 'claude-md';
+  if (format !== 'claude-md') die(`不认识的导出格式：${format}（目前支持 claude-md）`);
+  const idx = readIndex();
+  const active = idx.entries.filter((e) => e.status !== 'archived');
+  if (!active.length) return console.log('（没有可导出的记忆）');
+  const lines = ['## Project Memory（projectmem 导出，粘贴进 CLAUDE.md / AGENTS.md 即生效）', ''];
+  for (const [t, meta] of Object.entries(TYPES)) {
+    const es = active.filter((e) => e.type === t);
+    if (!es.length) continue;
+    lines.push(`### ${meta.label}`);
+    for (const e of es) {
+      lines.push(`- ${e.status === 'stale' ? '⚠️(已变旧) ' : ''}${e.text}`);
+    }
+    lines.push('');
+  }
+  lines.push('> 由 projectmem 从 git 证据链编译导出；更新请重跑 pmem export，勿手改。');
+  console.log(lines.join('\n'));
+}
+
+/* ---------------- demo：30 秒看懂整个闭环 ---------------- */
+function cmdDemo() {
+  const tmp = path.join(os.tmpdir(), 'pmem-demo-' + Date.now());
+  const prevCwd = cwd();
+  fs.mkdirSync(path.join(tmp, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ name: 'demo-app', version: '0.1.0' }, null, 2));
+  fs.writeFileSync(path.join(tmp, 'src', 'index.js'), "'use strict';\n// demo entry\n");
+  git(['init']);
+  git(['config', 'user.email', 'demo@local']);
+  git(['config', 'user.name', 'demo']);
+  process.chdir(tmp);
+  const banner = (s) => console.log(`\n━━━ ${s} ━━━`);
+  try {
+    console.log(`演示目录：${tmp}\n（看完可整个删掉；以下每一幕都是真实命令的真实输出）`);
+    banner('第 1 幕 · 记一条带证据和断言的决策');
+    cmdInit();
+    console.log('');
+    cmdAdd(['decision', '本项目用 CommonJS，零运行时依赖', '--assert', 'no-deps', '--file', 'package.json']);
+    console.log('');
+    cmdAdd(['pitfall', 'Windows 终端先 chcp 65001 才不乱码', '--tag', 'windows', '--file', 'src/index.js']);
+    console.log('');
+    cmdAdd(['progress', '完成入口模块', '--file', 'src/index.js']);
+    banner('第 2 幕 · 检索：换了个会话也能查');
+    cmdQuery(['乱码']);
+    banner('第 3 幕 · 代码变了，记忆自动变旧');
+    // 模拟改动：触碰 src/index.js 的 mtime（git 无提交时以 mtime 兜底判定）
+    const later = new Date(Date.now() + 3000);
+    fs.utimesSync(path.join(tmp, 'src', 'index.js'), later, later);
+    cmdStale();
+    banner('第 4 幕 · 复核：内容还对就 fresh，过时了就 archive');
+    cmdFresh(['m003']);
+    banner('第 5 幕 · 断言：谁真装了依赖当场红牌');
+    // 破坏决策：塞一个依赖进去，让 no-deps 断言挂掉
+    const pkg = JSON.parse(fs.readFileSync(path.join(tmp, 'package.json'), 'utf8'));
+    pkg.dependencies = { lodash: '^4.0.0' };
+    fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify(pkg, null, 2));
+    cmdCheck();
+    banner('结束 · 会话开始时注入（hook session-start 干的事）');
+    cmdFresh(['m001']);
+    cmdInject(['--budget', '1500']);
+    console.log(`\n↑ 这段就是 agent 每次会话开局自动吃到的记忆。\n\n自己项目里开始：\n  pmem init\n  pmem add decision "你的第一条" --file 相关文件\n\n演示目录（可删）：${tmp}`);
+  } finally {
+    process.chdir(prevCwd);
+  }
+}
+
 /* ---------------- hook：给 agent 钩子用的静默入口 ---------------- */
 function cmdHook(args) {
   if (args[0] !== 'session-start') die('目前只支持：pmem hook session-start');
@@ -1082,6 +1151,8 @@ const HELP = `projectmem (pmem) v${VERSION} — 零依赖的"项目记忆编译�
   setup [--yes]                 一键安装：装 pmem 命令 + 配 PATH + 打印 MCP/钩子/agent 约定配置
   hook session-start            给 agent 钩子用：静默失效扫描 + 断言 + 注入记忆（一段输出搞定）
   agent-instructions            打印可粘贴进 CLAUDE.md/AGENTS.md 的"agent 自动记忆约定"
+  export [--format claude-md]   把记忆编译成可粘贴 CLAUDE.md 的紧凑块
+  demo                          30 秒演示完整闭环（临时目录，看完可删）
   security scan [--fix]         扫描记忆中的密钥/疑似注入（--fix 就地脱敏；有发现退出码 1，可挂 CI）
   security verify               事件日志哈希链完整性校验（检测历史被篡改）
 
@@ -1115,6 +1186,8 @@ function main() {
     case 'setup': return cmdSetup(rest).catch((e) => die(e.message));
     case 'hook': return cmdHook(rest);
     case 'agent-instructions': return cmdAgentInstructions();
+    case 'export': return cmdExport(rest);
+    case 'demo': return cmdDemo();
     case 'security': return cmdSecurity(rest);
     case undefined:
     case 'help':

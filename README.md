@@ -46,6 +46,8 @@ node pmem.js add decision "本项目零依赖，不许引入 npm 运行时依赖
 node pmem.js query 零依赖
 ```
 
+**先看效果再动手**：`node pmem.js demo`——在临时目录自动跑一遍完整闭环（带证据写入 → 检索 → 代码一变记忆自动变旧 → 复核复活 → 断言当场红牌），每一幕都是真实命令的真实输出，看完可整个删掉。
+
 第一条记忆就带上了完整范式：**证据**（自动记录 commit + 依赖文件）、**失效源**（package.json 一变它就变旧）、**断言**（谁真装了依赖，`pmem check` 当场红牌）。
 
 ### 想要"全自动"？两步做完上面的事
@@ -96,6 +98,8 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 `pmem hook session-start` 一段输出做完三件事：静默失效扫描（git 驱动）→ 静默断言检查 → 按 1500 token 预算注入记忆，末尾附提醒行。
 
+**手动接入**：`pmem export` 把记忆编译成紧凑的 Markdown 块（按类型分组、保状态标记、去元数据），重定向进你的 `CLAUDE.md` / `AGENTS.md` 即可：`pmem export >> AGENTS.md`。
+
 **CI 卡口**：`pmem check` 退出码非 0 即失败——决策被违反或记忆过期，构建直接红。
 
 ## 安全
@@ -137,7 +141,7 @@ claude mcp add projectmem -- node /path/to/pmem.js mcp
 
 - ✅ **P0**：单文件 CLI + JSONL 事件日志 + 证据链 + 中文检索
 - ✅ **P1**：git 依赖失效扫描 + 断言 + 预算注入 + MCP stdio server
-- 🔶 **P2**（大半完成）：命中率遥测、ROI 账本、SessionStart 自动注入钩子（`hook session-start`）、agent 自动记忆约定、一键安装（`setup` / `install.cmd`）已上线；会话转录自动摘要抓取进行中
+- 🔶 **P2**（大半完成）：命中率遥测、ROI 账本、SessionStart 自动注入钩子（`hook session-start`）、agent 自动记忆约定、一键安装（`setup` / `install.cmd`）、闭环演示（`demo`）、CLAUDE.md 导出（`export`）已上线；会话转录自动摘要抓取进行中
 - ⬜ **P3**：本地向量检索（openvino/MiniLM）、LLM 记忆润色（可选层）、4 层记忆分层
 
 ## 开发

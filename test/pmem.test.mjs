@@ -382,3 +382,25 @@ test('v1.3 MCP 参数校验：坏 type/坏 assert 报错且 server 存活，坏 
   assert.ok(!msgs[3].result.isError && msgs[3].result.content[0].text.includes('字符串数组'), '坏 files 应降级并提示');
   assert.ok(!msgs[4].result.isError, 'server 应存活响应后续请求');
 });
+
+test('v1.4 export：紧凑块按类型分组且坏格式报错', () => {
+  const tmp = mktmp();
+  run(['init'], tmp);
+  run(['add', 'decision', '导出测试决策'], tmp);
+  run(['note', '导出测试便签'], tmp);
+  const r = run(['export'], tmp);
+  assert.ok(r.stdout.includes('### 决策') && r.stdout.includes('导出测试决策'), '决策应分组导出');
+  assert.ok(r.stdout.includes('### 便签'), '便签应分组导出');
+  const bad = run(['export', '--format', 'md'], tmp);
+  assert.equal(bad.status, 2, '非法格式应退出码 2');
+});
+
+test('v1.4 demo：五幕闭环全部跑通且不影响当前目录', () => {
+  const before = process.cwd();
+  const r = run(['demo'], tmpdir());
+  assert.equal(process.cwd(), before, 'demo 不应改变调用方目录');
+  assert.ok(r.stdout.includes('第 1 幕'), '应有写入幕');
+  assert.ok(r.stdout.includes('第 3 幕'), '应有失效幕');
+  assert.ok(r.stdout.includes('❌ 未过'), '断言红牌幕应出现');
+  assert.ok(r.stdout.includes('pmem-demo-'), '应打印演示目录');
+});

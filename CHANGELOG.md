@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/)。
 
+## [1.4.0] - 2026-10-09
+
+### 增长：30 秒 aha moment
+- **pmem demo**：临时目录自动跑通完整闭环（带证据写入 → 检索 → 代码一变记忆自动变旧 → 复核复活 → 断言红牌），每一幕都是真实命令真实输出，看完即删
+- **pmem export --format claude-md**：把记忆编译成紧凑 Markdown 块（按类型分组、保状态标记），`pmem export >> AGENTS.md` 即完成手动接入
+- README 快速开始新增 demo 入口；路线图 P2 更新
+
 ## [1.3.0] - 2026-10-09
 
 ### 并发与性能（P0）
