@@ -36,7 +36,14 @@
 
 **Windows：下载/克隆仓库 → 双击 `install.cmd` → 完事。**（没有 Node 也没关系，脚本会指路）
 
-**任何系统**：`node pmem.js setup`——自动装好全局 `pmem` 命令并配置 PATH，然后打印三份"即贴即用"配置：MCP 接入、SessionStart 自动注入钩子、**agent 自动记忆约定**。
+**任何系统（推荐）**：
+
+```bash
+npx projectmem demo    # 30 秒看懂完整闭环（临时目录，看完即删）
+node pmem.js setup     # 或装成全局命令（从 GitHub 克隆后）
+```
+
+`npx projectmem <命令>` 免安装直接用；装成全局命令后前缀省略。
 
 **极简党**：不装也行，就地用——
 

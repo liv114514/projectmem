@@ -25,9 +25,11 @@ All five mechanisms were novelty-checked against GitHub (2026-09): dependency-dr
 ## Quick start
 
 ```bash
-git clone https://github.com/liv114514/projectmem && cd projectmem
-node pmem.js setup        # installs global `pmem` + prints MCP/hooks/agent configs
+npx projectmem demo    # see the full loop in 30 seconds (temp dir, delete after)
+node pmem.js setup     # or install as a global command (after git clone)
 ```
+
+`npx projectmem <command>` runs without any install; install globally to drop the prefix.
 
 Then, in any project:
 
